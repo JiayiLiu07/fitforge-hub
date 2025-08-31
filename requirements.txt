@@ -1,0 +1,9 @@
+streamlit==1.48.0
+pandas==2.2.3
+plotly==6.3.0
+scikit-learn==1.6.1
+joblib==1.5.1
+openai==1.99.9
+pyspark==4.0.0
+numpy==2.2.6
+xgboost==3.0.4
