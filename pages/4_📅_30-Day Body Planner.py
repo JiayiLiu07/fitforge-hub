@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 MODEL_PATH = "models/obesity_xgb.pkl"
-numerical = ["Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE"]
+numerical = ["Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE", "steps"]
 categorical = ["Gender", "family_history_with_overweight", "FAVC", "CAEC",
                "SMOKE", "SCC", "CALC", "MTRANS"]
 feature_order = numerical + categorical
@@ -56,9 +56,10 @@ def predict_30d(base_row, delta, seed=42):
     age = base_row["Age"].iat[0]
     gender = base_row["Gender"].iat[0]
     activity = 1.2 + base_row["FAF"].iat[0] * 0.075
+    base_steps = base_row["steps"].iat[0]
 
     daily_deficit = (
-        delta["steps"] * 0.04 +
+        (base_steps + delta["steps"]) * 0.04 +
         delta["extra_ex"] * 150 +
         delta["veg_add"] * 15 +
         (150 if delta["no_drink"] else 0) +
@@ -117,6 +118,15 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        """
+        <p style='text-align:center; font-size:1rem; color:#6c757d; margin-bottom:1rem;'>
+        💡 Please complete the following personal information first so that you can proceed with subsequent operations and personalized planning on the main page!
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.container():
         st.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 
@@ -140,6 +150,7 @@ with st.sidebar:
 
         st.subheader("🏃 Activity & Transport")
         faf = st.slider("🏋️ Exercise sessions / week", 0, 7, 2)
+        steps = st.slider("🚶 Steps / day", 0, 20000, 5000, 500, help="≈ 2 000 steps ≈ 1 km")
         tue = st.slider("📺 Screen time (h/day)", 0, 12, 3)
         calc = st.selectbox("🍷 Alcohol", ["no", "Sometimes", "Frequently"])
         mtrans = st.selectbox("🚲 Transport", ["Walking", "Bike", "Public", "Car", "Motorbike"])
@@ -154,7 +165,7 @@ base_df = pd.DataFrame([{
     "Gender": gender, "Age": age, "Height": height, "Weight": weight,
     "family_history_with_overweight": family, "FAVC": favc, "FCVC": fcvc,
     "NCP": ncp, "CAEC": caec, "SMOKE": smoke, "CH2O": ch2o,
-    "SCC": scc, "FAF": faf, "TUE": tue, "CALC": calc, "MTRANS": mtrans,
+    "SCC": scc, "FAF": faf, "steps": steps, "TUE": tue, "CALC": calc, "MTRANS": mtrans,
 }])[feature_order]
 
 # ---------- Lifestyle Tweaks ----------
@@ -291,8 +302,6 @@ if st.session_state.get("scenarios"):
 proba = model.predict_proba(base_df)[0]
 level = le.inverse_transform([np.argmax(proba)])[0]
 st.success(f"Current obesity level: **{level}**")
-
-
 
 # ---------- Backup & Restore ----------
 st.subheader("💾 Backup & Restore")
