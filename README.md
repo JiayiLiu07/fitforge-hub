@@ -109,7 +109,6 @@ pyspark==4.0.0
 scikit-learn==1.7.1
 xgboost==3.1.0
 ```
-- If running locally, you need to configure the spark environment locally
 
 ### Dependency Version Verification
 - List installed package versions:
@@ -134,7 +133,8 @@ xgboost==3.1.0
 - **Missing Data Files**: The NL2SQL feature depends on datasets in the `data` folder. Missing or incorrectly formatted files may result in query errors.
 - **Image Loading**: The meal planner requires required dish images (default 36) in the `images` folder; otherwise, visualization may be affected.
 - **Dependency Conflicts**: Certain versions (e.g., `numpy==2.3.0` or `pyspark==4.0.0`) may cause compatibility issues in some environments. Use a virtual environment to mitigate.
-
+- **Local environment**: If running locally, you need to configure the Spark environment locally.
+  
 ## Bug Tracker 🐞
 
 Report issues or submit feature requests via GitHub Issues:
