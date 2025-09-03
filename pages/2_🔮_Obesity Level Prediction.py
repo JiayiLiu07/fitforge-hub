@@ -17,32 +17,8 @@ logging.basicConfig(
     ]
 )
 
-
-
 # Set page configuration
 st.set_page_config(page_title="Obesity Level Prediction", page_icon="🔮", layout="wide")
-
-st.set_page_config(
-    page_title="Obesity Level Prediction",
-    page_icon="🔮",
-    layout="wide"
-)
-
-if "api_key" not in st.session_state or not st.session_state["api_key"]:
-    st.markdown(
-        """
-        <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
-            🔮 Obesity Level Prediction 🌟
-        </h1>
-        <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
-            Please enter the following information to predict your obesity level. All fields are required. 💡
-        </p>
-        """,
-        unsafe_allow_html=True
-    )
-    # 黄色警告框
-    st.warning("⚠️ Please go to the sidebar and enter a valid API key in 🗣️ NL2SQL page.")
-    st.stop()
 
 # Custom CSS for Tailwind-inspired styling
 st.markdown("""
@@ -189,6 +165,13 @@ st.markdown("""
         padding: 0.25rem 0.5rem;
         border-radius: 0.25rem;
     }
+    .subtitle {
+        text-align: center;
+        color: #6b7280;
+        font-weight: 700;
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+    }
     @media (max-width: 640px) {
         .result-text { font-size: 1rem; }
         .suggestion-box { flex-direction: column; align-items: flex-start; }
@@ -227,44 +210,57 @@ st.markdown("""
 if "history" not in st.session_state:
     st.session_state.history = []
 
+# Sidebar conversation history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+    
 # Health suggestions dictionary with associated emojis
 suggestions = {
     'Normal_Weight': {
         'text': 'Your weight is normal! Maintain a balanced diet, exercise regularly (150 min/week moderate activity), and monitor your health periodically.',
-        'icon': '👍'
+        'icon': '✅'
     },
     'Insufficient_Weight': {
         'text': 'Underweight! Increase nutrient intake with high-protein foods (e.g., lean meats, nuts), consult a nutritionist, and monitor weight gain.',
-        'icon': '⚠️'
+        'icon': '📉'
     },
     'Overweight_Level_I': {
-        'text': 'Overweight Level I (or pre-overweight)! Reduce high-calorie foods/drinks, increase aerobic exercise (e.g., brisk walking, swimming, 150–300 min/week), and monitor waist circumference (Men: ≥90 cm, Women: ≥80 cm indicates risk).',
-        'icon': '🔔'
+        'text': 'Overweight Level I (or pre-overweight)! Reduce high-calorie foods/drinks, increase aerobic exercise (e.g., brisk walking, swimming, 150–300 min/week), and monitor waist circumference (Men: >90 cm, Women: >80 cm indicates risk).',
+        'icon': '⚠️'
     },
     'Overweight_Level_II': {
         'text': 'Overweight Level II! Control diet (reduce high-calorie foods, increase vegetables), engage in regular exercise (150–300 min/week), and seek professional fitness guidance.',
-        'icon': '🚨'
+        'icon': '⬆️'
     },
     'Obesity_Type_I': {
         'text': 'Obesity Type I! Start a weight loss plan with diet control, strength training, and consult a doctor. Monitor waist circumference and aim for gradual weight loss.',
-        'icon': '🛑'
+        'icon': '🚫'
     },
     'Obesity_Type_II': {
         'text': 'Obesity Type II! Take immediate action with professional medical intervention (e.g., nutritional counseling, possible medication). Increase exercise and monitor health closely.',
-        'icon': '‼️'
+        'icon': '⛔'
     },
     'Obesity_Type_III': {
         'text': 'Obesity Type III! High-risk condition; consult a doctor urgently for a comprehensive treatment plan. Focus on diet, exercise, and medical guidance.',
-        'icon': '🔴'
+        'icon': '🚨'
     }
 }
 
 # WHO BMI ranges (gender-neutral, per WHO standards)
 bmi_ranges = pd.DataFrame({
     'BMI Range': ['< 18.5', '18.5 - 24.9', '25.0 - 27.4', '27.5 - 29.9', '30.0 - 34.9', '35.0 - 39.9', '>= 40.0'],
-    'Obesity Level': ['Insufficient_Weight', 'Normal_Weight', 'Overweight_Level_I', 'Overweight_Level_II', 
+    'Obesity Level': ['Insufficient_Weight', 'Normal_Weight', 'Overweight_Level_I', 'Overweight_Level_II',
                       'Obesity_Type_I', 'Obesity_Type_II', 'Obesity_Type_III']
 })
+
+# Function to get valid default values for session state
+def get_valid_default(key, valid_options, default):
+    value = st.session_state.get(key)
+    if value in valid_options:
+        return value
+    if value is not None:
+        logging.warning(f"Invalid session state value for '{key}': {value}. Falling back to '{default}'.")
+    return default
 
 # Function to determine BMI-based obesity level
 def get_bmi_obesity_level(bmi):
@@ -281,6 +277,46 @@ def get_bmi_obesity_level(bmi):
                 return row['Obesity Level']
     return 'Unknown'
 
+# Risk details dictionary
+risk_details = {
+    'Family history of overweight': {
+        'explanation': 'Having a family history of overweight increases your risk of obesity by up to 80%, as it can involve genetic factors linked to higher BMI, cardiovascular diseases, and type 2 diabetes (source: Obesity Action Coalition and related studies).',
+        'suggestion': 'Even with a genetic predisposition, you can lower your risk through a balanced diet, regular exercise, and routine health check-ups. Consider consulting a doctor for personalized screening.'
+    },
+    'Frequent high-calorie food': {
+        'explanation': 'Frequent consumption of high-calorie foods (e.g., processed or fast foods high in sugar, salt, and fats) can lead to obesity, insulin resistance, type 2 diabetes, and heart disease, as they contribute excess calories without satiety (source: MD Anderson Cancer Center and Medical News Today).',
+        'suggestion': 'Limit high-calorie foods to occasional treats (less than 2-3 times per week). Focus on whole foods like fruits, vegetables, and lean proteins for better nutrient balance.'
+    },
+    'Vegetable consumption frequency': {
+        'explanation': 'Low vegetable intake (≤3 times/week) is a high risk because it deprives your body of essential nutrients and fiber, increasing chances of obesity, heart disease, and weakened immunity (source: WHO recommends at least 400g or 5 portions of fruits/vegetables daily).',
+        'suggestion': 'Aim for vegetables in every meal, targeting at least 5-7 times per week (e.g., 2-3 cups daily). Start by adding salads or steamed veggies to your routine for gradual improvement.'
+    },
+    'Main meal frequency': {
+        'explanation': 'Irregular main meals (<2 or >4 per day) can disrupt metabolism, leading to overeating, weight gain, and higher risk of metabolic syndrome (source: Studies suggest 2-3 meals per day is optimal for energy balance).',
+        'suggestion': 'Stick to 3 balanced main meals per day to maintain steady energy levels. Avoid skipping meals or excessive eating; plan ahead with portion control.'
+    },
+    'Food consumption between meals': {
+        'explanation': 'Always snacking between meals adds extra calories, potentially causing weight gain and poor dietary habits, especially if snacks are unhealthy (source: Harvard Nutrition Source notes snacking can stem from boredom or distraction, contributing up to 25% of daily energy).',
+        'suggestion': 'Limit snacking to 1-2 times per day, choosing healthy options like nuts or yogurt. Eat mindfully to address hunger vs. emotional triggers.'
+    },
+    'Smoking': {
+        'explanation': 'Smoking increases risks of metabolic syndrome, diabetes, and cardiovascular diseases, and when combined with obesity, it amplifies health issues (source: NCBI and AHA studies).',
+        'suggestion': 'Quitting smoking can significantly reduce these risks. Seek support from cessation programs or a healthcare provider for effective strategies.'
+    },
+    'Physical activity frequency': {
+        'explanation': 'Insufficient physical activity (≤2 times/week) raises obesity, heart disease, and diabetes risks by reducing energy expenditure (source: WHO recommends at least 150 minutes of moderate activity per week, or 3-5 sessions).',
+        'suggestion': 'Build up to at least 3-5 exercise sessions per week, such as walking or cycling for 30 minutes each. Start small and track progress for motivation.'
+    },
+    'High-calorie drink consumption': {
+        'explanation': 'Frequent high-calorie drinks (e.g., sugary sodas) contribute to weight gain, obesity, type 2 diabetes, heart disease, and tooth decay, as they add empty calories (source: CDC and Harvard Nutrition Source).',
+        'suggestion': 'Switch to water, herbal tea, or zero-calorie options. Limit sugary drinks to less than once per week to cut unnecessary calories.'
+    },
+    'Transportation mode': {
+        'explanation': 'Sedentary modes like automobile or motorbike reduce daily physical activity, increasing obesity and pollution-related health risks (source: CDC promotes active transport like walking or biking for better fitness).',
+        'suggestion': 'Opt for walking, biking, or public transport when possible to incorporate more movement. Aim for at least 10-15 minutes of active commuting daily.'
+    }
+}
+
 # Function to analyze lifestyle risk factors
 def analyze_risk_factors(input_data):
     risk_factors = [
@@ -294,49 +330,67 @@ def analyze_risk_factors(input_data):
         {'name': 'High-calorie drink consumption', 'value': input_data['SCC'][0], 'condition': 'yes', 'risk': 'High', 'weight': 0.2, 'odds_ratio': 1.5},
         {'name': 'Transportation mode', 'value': input_data['MTRANS'][0], 'condition': lambda x: x in ['Automobile', 'Motorbike'], 'risk': 'Medium', 'weight': 0.1, 'odds_ratio': 1.1}
     ]
-    
+
     risk_summary = []
     high_risk_count = 0
     medium_risk_count = 0
     total_risk_score = 0.0
     high_risk_factors = []
-    
+    medium_risk_factors = []
+
     # Calculate standardized scores based on odds ratios
-    max_odds_ratio = max(factor['odds_ratio'] - 1 for factor in risk_factors)  # For normalization
+    all_odds_ratios = [factor['odds_ratio'] for factor in risk_factors]
+    max_or_value = 2.5 
+    max_odds_ratio_minus_1 = max(or_val - 1 for or_val in all_odds_ratios + [max_or_value]) if all_odds_ratios else 1.0
+
     for factor in risk_factors:
         if callable(factor['condition']):
             is_risk = factor['condition'](factor['value'])
         else:
             is_risk = factor['value'] == factor['condition']
-        
+
         risk_level = factor['risk'] if is_risk else 'Neutral'
         contribution = 0.0
+        
         if is_risk:
-            standardized_score = (factor['odds_ratio'] - 1) / max_odds_ratio  # Normalize OR contribution
+            normalized_contribution = (factor['odds_ratio'] - 1) / (max_or_value - 1) if max_or_value > 1 else 0
             if 'High' in factor['risk']:
                 high_risk_count += 1
-                contribution = factor['weight'] * standardized_score
-                total_risk_score += contribution
+                contribution = factor['weight'] * normalized_contribution
                 high_risk_factors.append(factor['name'])
             elif 'Medium' in factor['risk']:
                 medium_risk_count += 1
-                contribution = factor['weight'] * standardized_score * 0.5
-                total_risk_score += contribution
-        
+                contribution = factor['weight'] * normalized_contribution * 0.5
+                medium_risk_factors.append(factor['name'])
+
+        total_risk_score += contribution
+
         risk_summary.append({
             'Risk Factor': factor['name'],
             'User Input': str(factor['value']),
             'Risk Level': risk_level,
             'Contribution': round(contribution, 2)
         })
-    
-    return pd.DataFrame(risk_summary), high_risk_count, medium_risk_count, total_risk_score, high_risk_factors
+
+    return pd.DataFrame(risk_summary), high_risk_count, medium_risk_count, total_risk_score, high_risk_factors, medium_risk_factors
 
 # Function to get AI-predicted obesity level
 def get_ai_obesity_level(input_data, bmi, high_risk_count, medium_risk_count, total_risk_score):
-    client = OpenAI(api_key=st.session_state["api_key"],
-                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    API_KEY = st.session_state.get("api_key") or os.getenv("DASHSCOPE_API_KEY")
     
+    if not API_KEY:
+        API_KEY = "sk-e200005b066942eebc8c5426df92a6d5"
+        logging.warning("DASHSCOPE_API_KEY not found in session state or environment variables. Using hardcoded fallback key.")
+        
+    if not API_KEY:
+        return None, "API Key not found. Please set the DASHSCOPE_API_KEY environment variable or provide it in the session state."
+    
+    try:
+        client = OpenAI(api_key=API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    except Exception as e:
+        logging.error(f"Failed to initialize OpenAI client: {e}")
+        return None, f"Failed to initialize AI client: {e}"
+
     PROMPT_TEMPLATE = """
 You are a senior health analyst tasked with predicting obesity levels based on user data, BMI, and lifestyle risk factors. The possible obesity levels are: Insufficient_Weight, Normal_Weight, Overweight_Level_I, Overweight_Level_II, Obesity_Type_I, Obesity_Type_II, Obesity_Type_III.
 
@@ -377,104 +431,169 @@ User Data:
 - Alcohol consumption: {CALC}
 - Transportation mode: {MTRANS}
 - BMI: {bmi:.2f}
-- High-Risk Factors: {high_risk_count}
-- Medium-Risk Factors: {medium_risk_count}
-- Total Risk Score: {total_risk_score:.2f} (out of ~1.6)
+- High-Risk Factors Count: {high_risk_count}
+- Medium-Risk Factors Count: {medium_risk_count}
+- Total Risk Score: {total_risk_score:.2f} (max possible is ~1.6)
 """
-    
+
     full_prompt = PROMPT_TEMPLATE.format(**input_data.to_dict(orient='records')[0], bmi=bmi, high_risk_count=high_risk_count, medium_risk_count=medium_risk_count, total_risk_score=total_risk_score)
-    
-    # Log input data and prompt for debugging
+
     logging.info("=========== Input Data ===========")
     logging.info(f"Input: {input_data.to_dict(orient='records')[0]}")
     logging.info(f"BMI: {bmi:.2f}, High-Risk: {high_risk_count}, Medium-Risk: {medium_risk_count}, Total Risk Score: {total_risk_score:.2f}")
     logging.info("=========== Prompt ===========")
     logging.info(f"Sending prompt to LLM:\n{full_prompt}")
-    
+
     try:
         response = client.chat.completions.create(
             model="qwen-plus",
             messages=[
-                {"role": "system", "content": "You are a health expert predicting obesity levels based on user data, BMI, and lifestyle risk factors."},
+                {"role": "system", "content": "You are a health expert predicting obesity levels based on user data, BMI, and lifestyle risk factors. Respond with only the obesity level string."},
                 {"role": "user", "content": full_prompt}
             ],
-            temperature=0,  # Ensure deterministic output
+            temperature=0,
             max_tokens=50
         )
         prediction = response.choices[0].message.content.strip()
         logging.info(f"AI Prediction: {prediction}")
-        if prediction in [row['Obesity Level'] for _, row in bmi_ranges.iterrows()]:
-            # Update history
-            input_summary = f"Gender: {input_data['Gender'][0]}, Age: {input_data['Age'][0]}, Height: {input_data['Height'][0]}, Weight: {input_data['Weight'][0]}, Other factors: {input_data['family_history_with_overweight'][0]}, {input_data['FAVC'][0]}, {input_data['FCVC'][0]}, {input_data['NCP'][0]}, {input_data['CAEC'][0]}, {input_data['SMOKE'][0]}, {input_data['CH2O'][0]}, {input_data['SCC'][0]}, {input_data['FAF'][0]}, {input_data['TUE'][0]}, {input_data['CALC'][0]}, {input_data['MTRANS'][0]}"
+
+        valid_predictions = [row['Obesity Level'] for _, row in bmi_ranges.iterrows()]
+        if prediction in valid_predictions:
+            input_summary = f"Gender: {input_data['Gender'][0]}, Age: {input_data['Age'][0]}, Height: {input_data['Height'][0]}, Weight: {input_data['Weight'][0]}, FamilyHist: {input_data['family_history_with_overweight'][0]}, FAVC: {input_data['FAVC'][0]}, FCVC: {input_data['FCVC'][0]}, NCP: {input_data['NCP'][0]}, CAEC: {input_data['CAEC'][0]}, SMOKE: {input_data['SMOKE'][0]}, CH2O: {input_data['CH2O'][0]}, SCC: {input_data['SCC'][0]}, FAF: {input_data['FAF'][0]}, TUE: {input_data['TUE'][0]}, CALC: {input_data['CALC'][0]}, MTRANS: {input_data['MTRANS'][0]}"
             st.session_state.history.append((input_summary, prediction))
             return prediction, "Prediction successful."
         else:
-            logging.warning(f"Invalid prediction received: {prediction}")
+            logging.warning(f"Invalid prediction received from LLM: {prediction}")
             return None, f"Invalid prediction received: {prediction}"
     except Exception as e:
-        logging.error(f"Error in API call: {str(e)}")
-        return None, f"Error in API call: {str(e)}"
+        logging.error(f"Error during AI prediction: {e}")
+        return None, f"Error during AI prediction: {e}"
 
-# Main program
+# Main function to run the app
 def main():
+    with st.sidebar:
+        st.header("🕒 Query History")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if st.button("🗑️ Clear History"):
+                st.session_state.chat_history = []
+                st.rerun()
+        with col2:
+            st.write("")
+
+        if st.session_state.chat_history:
+            for idx, (q, a) in enumerate(reversed(st.session_state.chat_history)):
+                with st.expander(f"{len(st.session_state.chat_history)-idx}. {q[:55]}…"):
+                    st.markdown("**Q：** " + q)
+                    st.markdown("**A：** " + a)
+        else:
+            st.info("No queries yet. Start asking!🥳")
+
+
+    # Always display title and subtitle
     st.markdown(
         """
         <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
             🔮 Obesity Level Prediction 🌟
         </h1>
         <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
-            Please enter the following information to predict your obesity level. All fields are required. 💡
+        Please enter the following information to predict your obesity level. All fields are required. 💡
         </p>
         """,
         unsafe_allow_html=True
     )
-    # Sidebar for history
-    with st.sidebar:
-        st.header("🕒 Prediction History")
-        if st.button("🗑️ Clear History"):
-            st.session_state.history = []
-            st.success("History cleared! ✅")
-        
-        if st.session_state.history:
-            for i, (data, prediction) in enumerate(st.session_state.history):
-                with st.expander(f"Prediction {i+1}"):
-                    st.markdown(f"**Input Data:** {data}")
-                    st.markdown(f"**AI Prediction:** {prediction.replace('_', ' ')}")
-        else:
-            st.info("No predictions yet. Start predicting! 🥳")
+
+    # Check for API Key
+    if not st.session_state.get("api_key"):
+        st.warning("⚠️ Please go to the sidebar and enter a valid API key in FitForge_Hub🚀 page")
+        st.stop()
+
+    # Set default values for session state
+    default_gender = get_valid_default("gender", ["Male", "Female"], "Male")
+    default_age = st.session_state.get("age", 30)
+    height_cm = st.session_state.get("height", 170.0)
+    height_cm_stored = st.session_state.get("height")
+    if not isinstance(height_cm_stored, (int, float)):
+        height_cm = 170.0
+        logging.error(f"Invalid type for st.session_state['height']: {type(height_cm_stored)}. Expected number, got {type(height_cm_stored)}. Resetting to default.")
+    default_height = height_cm / 100
+
+    default_weight = st.session_state.get("weight", 70.0)
+    default_family_history = get_valid_default("family_history_with_overweight", ["yes", "no"], "no")
+    default_favc = get_valid_default("favc", ["yes", "no"], "no")
+    default_fcvc = st.session_state.get("fcvc", 3)
+    default_ncp = st.session_state.get("ncp", 3)
+    caec_options = ["Always", "Frequently", "Sometimes"]
+    default_caec = get_valid_default("caec", caec_options, "Sometimes")
+    default_smoke = get_valid_default("smoke", ["yes", "no"], "no")
+    default_ch2o = st.session_state.get("ch2o", 2.0)
+    default_scc = get_valid_default("scc", ["yes", "no"], "no")
+    default_faf = st.session_state.get("faf", 2)
+    default_tue = st.session_state.get("tue", 2)
+    calc_options = ["No", "Sometimes", "Frequently"]
+    default_calc = get_valid_default("calc", calc_options, "No")
+    mtrans_options = ["Automobile", "Bike", "Motorbike", "Public_Transportation", "Walking"]
+    mtrans_mapping = {
+        "Public": "Public_Transportation", "Car": "Automobile", "bike": "Bike",
+        "motorbike": "Motorbike", "walking": "Walking", "public_transportation": "Public_Transportation"
+    }
+    raw_mtrans_value = st.session_state.get("mtrans")
+    if raw_mtrans_value in mtrans_options:
+        default_mtrans = raw_mtrans_value
+    elif raw_mtrans_value is not None and isinstance(raw_mtrans_value, str):
+        default_mtrans = mtrans_mapping.get(raw_mtrans_value, "Public_Transportation")
+        logging.warning(f"MTRANS value '{raw_mtrans_value}' not directly in options. Mapped to '{default_mtrans}'.")
+    else:
+        default_mtrans = "Public_Transportation"
+        if raw_mtrans_value is not None:
+            logging.warning(f"Invalid session state value for 'mtrans': {raw_mtrans_value}. Falling back to '{default_mtrans}'.")
 
     with st.form(key='prediction_form'):
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            gender = st.selectbox("🚻 Gender", ["Male", "Female"], help="Select your gender")
-            age = st.slider("👴 Age (years)", min_value=0, max_value=120, value=25, help="Slide to select your age")
-            height = st.slider("📏 Height (meters)", min_value=0.0, max_value=3.0, value=1.70, step=0.01, help="Slide to select your height")
-            weight = st.slider("⚖️ Weight (kg)", min_value=0.0, max_value=300.0, value=70.0, step=0.1, help="Slide to select your weight")
-            family_history = st.selectbox("👪 Family history of overweight", ["yes", "no"], help="Do you have a family history of overweight?")
-            favc = st.selectbox("🍔 Frequent consumption of high-calorie food", ["yes", "no"], help="Do you frequently eat high-calorie food?")
-            fcvc = st.slider("🥦 Vegetable consumption frequency (per week)", min_value=0, max_value=7, value=3, help="Slide to select weekly vegetable consumption")
-            ncp = st.slider("🍽️ Main meal frequency (per day)", min_value=0, max_value=10, value=3, help="Slide to select daily main meal frequency")
-        
+            gender = st.selectbox("♂️ Gender", ["Male", "Female"], index=["Male", "Female"].index(default_gender), help="Select your gender")
+            age = st.slider("📅 Age (years)", min_value=0, max_value=120, value=default_age, help="Slide to select your age")
+            height = st.slider("📏 Height (meters)", min_value=0.0, max_value=3.0, value=default_height, step=0.01, help="Slide to select your height")
+            weight = st.slider("⚖️ Weight (kg)", min_value=0.0, max_value=300.0, value=default_weight, step=0.1, help="Slide to select your weight")
+            family_history = st.selectbox("👨‍👩‍👧‍👦 Family history of overweight", ["yes", "no"], index=["yes", "no"].index(default_family_history), help="Do you have a family history of overweight?")
+            favc = st.selectbox("🍔 Frequent consumption of high-calorie food", ["yes", "no"], index=["yes", "no"].index(default_favc), help="Do you frequently eat high-calorie food?")
+            fcvc = st.slider("🥦 Vegetable consumption frequency (per week)", min_value=0, max_value=7, value=default_fcvc, help="Slide to select weekly vegetable consumption")
+            ncp = st.slider("🍽️ Main meal frequency (per day)", min_value=0, max_value=10, value=default_ncp, help="Slide to select daily main meal frequency")
+
         with col2:
-            caec = st.selectbox("🍿 Food consumption between meals", ["Always", "Frequently", "Sometimes"], help="Frequency of snacking between meals")
-            smoke = st.selectbox("🚬 Smoking", ["yes", "no"], help="Do you smoke?")
-            ch2o = st.slider("💧 Daily water consumption (liters)", min_value=0.0, max_value=10.0, value=2.0, step=0.1, help="Slide to select daily water intake")
-            scc = st.selectbox("🥤 High-calorie drink consumption", ["yes", "no"], help="Do you frequently consume high-calorie drinks?")
-            faf = st.slider("🏃 Physical activity frequency (per week)", min_value=0, max_value=7, value=2, help="Slide to select weekly exercise frequency")
-            tue = st.slider("📱 Electronic device usage time (hours/day)", min_value=0, max_value=24, value=2, help="Slide to select daily electronic device usage")
-            calc = st.selectbox("🍷 Alcohol consumption", ["No", "Sometimes", "Frequently"], help="Frequency of alcohol consumption")
-            mtrans = st.selectbox("🚗 Daily transportation mode", ["Automobile", "Bike", "Motorbike", 
-                                                               "Public_Transportation", "Walking"], help="Primary mode of transportation")
-        
-        submit_button = st.form_submit_button("🔍 Predict Obesity Level")
-    
-    # Process form submission
+            caec = st.selectbox("🍫 Food consumption between meals", caec_options, index=caec_options.index(default_caec), help="Frequency of snacking between meals")
+            smoke = st.selectbox("🚬 Smoking", ["yes", "no"], index=["yes", "no"].index(default_smoke), help="Do you smoke?")
+            ch2o = st.slider("💧 Daily water consumption (liters)", min_value=0.0, max_value=10.0, value=default_ch2o, step=0.1, help="Slide to select daily water intake")
+            scc = st.selectbox("🥤 High-calorie drink consumption", ["yes", "no"], index=["yes", "no"].index(default_scc), help="Do you frequently consume high-calorie drinks?")
+            faf = st.slider("🏃 Physical activity frequency (per week)", min_value=0, max_value=7, value=default_faf, help="Slide to select weekly exercise frequency")
+            tue = st.slider("📱 Electronic device usage time (hours/day)", min_value=0, max_value=24, value=default_tue, help="Slide to select daily electronic device usage")
+            calc = st.selectbox("🍺 Alcohol consumption", calc_options, index=calc_options.index(default_calc), help="Frequency of alcohol consumption")
+            mtrans = st.selectbox("🚗 Daily transportation mode", mtrans_options, index=mtrans_options.index(default_mtrans), help="Primary mode of transportation")
+
+        submit_button = st.form_submit_button("🔮 Predict Obesity Level")
+
     if submit_button:
-        # Clear previous form submission state to ensure fresh calculation
-        if 'form_submitted' in st.session_state:
-            del st.session_state['form_submitted']
-        
+        st.session_state["gender"] = gender
+        st.session_state["age"] = age
+        if height is not None and isinstance(height, (int, float)):
+            st.session_state["height"] = height * 100
+        else:
+            logging.warning("Slider provided an invalid height value. Session state not updated.")
+        st.session_state["weight"] = weight
+        st.session_state["family_history_with_overweight"] = family_history
+        st.session_state["favc"] = favc
+        st.session_state["fcvc"] = fcvc
+        st.session_state["ncp"] = ncp
+        st.session_state["caec"] = caec
+        st.session_state["smoke"] = smoke
+        st.session_state["ch2o"] = ch2o
+        st.session_state["scc"] = scc
+        st.session_state["faf"] = faf
+        st.session_state["tue"] = tue
+        st.session_state["calc"] = calc
+        st.session_state["mtrans"] = mtrans
+
         input_data = pd.DataFrame({
             'Gender': [gender],
             'Age': [age],
@@ -493,8 +612,8 @@ def main():
             'CALC': [calc],
             'MTRANS': [mtrans]
         })
-        
-        st.markdown("#### 📋 Your Input Data")
+
+        st.markdown("#### 📄 Your Input Data")
         st.markdown("""
             <div class='input-box'>
                 <p><strong>Gender:</strong> {}</p>
@@ -514,44 +633,89 @@ def main():
                 <p><strong>Alcohol consumption:</strong> {}</p>
                 <p><strong>Transportation mode:</strong> {}</p>
             </div>
-        """.format(gender, age, height, weight, family_history, favc, fcvc, ncp, caec, smoke, ch2o, scc, faf, tue, calc, mtrans), 
+        """.format(gender, age, height, weight, family_history, favc, fcvc, ncp, caec, smoke, ch2o, scc, faf, tue, calc, mtrans),
         unsafe_allow_html=True)
-        
+
         csv_buffer = StringIO()
         input_data.to_csv(csv_buffer, index=False)
         st.download_button(
-            label="📥 Download Input Data as CSV",
+            label="⬇️ Download Input Data as CSV",
             data=csv_buffer.getvalue(),
             file_name="user_input_data.csv",
             mime="text/csv",
             key="download_button"
         )
-        
+
         def normalize_radar(df):
             vec = {}
-            vec['Diet'] = (df['FCVC'][0] / 7) * (1 - (df['FAVC'][0] == 'yes'))
-            vec['Exercise'] = df['FAF'][0] / 7
-            vec['Hydration'] = min(df['CH2O'][0] / 3, 1)
-            vec['Sleep Habits'] = 1 - min(df['TUE'][0] / 12, 1)
-            vec['Genetics'] = 1 - (df['family_history_with_overweight'][0] == 'yes')
-            vec['Commute'] = {'Walking': 1, 'Bike': 0.9, 'Public_Transportation': 0.7,
-                              'Motorbike': 0.4, 'Automobile': 0.2}[df['MTRANS'][0]]
-            vec['Alcohol'] = {'No': 1, 'Sometimes': 0.6, 'Frequently': 0.2}[df['CALC'][0]]
+            diet_score_fcvc = (df['FCVC'][0] / 7) if df['FCVC'][0] >= 0 else 0
+            diet_score_favc = (1 - (df['FAVC'][0] == 'yes')) if df['FAVC'][0] in ['yes', 'no'] else 0.5
+            vec['Diet'] = (diet_score_fcvc * 0.7 + diet_score_favc * 0.3)
+            vec['Exercise'] = df['FAF'][0] / 7 if df['FAF'][0] >= 0 else 0
+            vec['Hydration'] = min(df['CH2O'][0] / 3, 1) if df['CH2O'][0] >= 0 else 0
+            vec['Sleep Habits'] = 1 - min(df['TUE'][0] / 12, 1) if df['TUE'][0] >= 0 else 1
+            vec['Genetics'] = 1 - (df['family_history_with_overweight'][0] == 'yes') if df['family_history_with_overweight'][0] in ['yes', 'no'] else 0.5
+            mtrans_score = {'Walking': 1, 'Bike': 0.9, 'Public_Transportation': 0.7, 'Motorbike': 0.4, 'Automobile': 0.2}
+            vec['Commute'] = mtrans_score.get(df['MTRANS'][0], 0.3)
+            alcohol_score = {'No': 1, 'Sometimes': 0.6, 'Frequently': 0.2}
+            vec['Alcohol'] = alcohol_score.get(df['CALC'][0], 0.4)
+            for key, value in vec.items():
+                if isinstance(value, (int, float)):
+                    vec[key] = max(0, min(1, value))
             keys = list(vec.keys())
             vals = list(vec.values())
             avg = [0.65, 0.55, 0.70, 0.60, 0.50, 0.45, 0.75]
             return keys, vals, avg
-        
-        st.markdown("### 🕸️ Obesity Radar")
+
+        if height > 0:
+            bmi = weight / (height ** 2)
+            bmi_percentage = min(bmi / 40 * 100, 100)
+        else:
+            bmi = 0
+            bmi_percentage = 0
+            logging.warning("Height is zero, cannot calculate BMI.")
+
+        bmi_obesity_level = get_bmi_obesity_level(bmi)
+        risk_df, high_risk_count, medium_risk_count, total_risk_score, high_risk_factors, medium_risk_factors = analyze_risk_factors(input_data)
+
+        logging.info(f"Calculated Total Risk Score: {total_risk_score:.2f}")
+        logging.info(f"Risk Factor Contributions: {risk_df[['Risk Factor', 'Contribution']].to_dict('records')}")
+
+        ai_prediction, ai_message = get_ai_obesity_level(input_data, bmi, high_risk_count, medium_risk_count, total_risk_score)
+
+        if ai_prediction is None:
+            st.warning(f"AI prediction failed: {ai_message}. Falling back to BMI-based prediction.")
+            final_prediction = bmi_obesity_level
+            risk_summary = f"Your BMI is {bmi:.1f}, which falls in the {bmi_obesity_level.replace('_', ' ').lower()} range according to WHO standards. The AI prediction failed (reason: {ai_message}), so we are using the BMI-based result for now."
+        else:
+            final_prediction = ai_prediction
+            risk_summary = f"Your BMI is {bmi:.1f}, which falls in the {bmi_obesity_level.replace('_', ' ').lower()} range according to WHO standards."
+            if high_risk_count > 0 or medium_risk_count > 0:
+                risk_summary += f" However, due to lifestyle risks ({high_risk_count} high-risk and {medium_risk_count} medium-risk factors, total risk score of {total_risk_score:.2f} out of ~1.6), the AI predicts you may have {final_prediction.replace('_', ' ').lower()}. This suggests a higher overall health risk. Here's a breakdown to help you understand and improve:\n\n"
+                if high_risk_count > 0:
+                    risk_summary += "**High-Risk Factors:**\n"
+                    for factor in high_risk_factors:
+                        details = risk_details.get(factor, {'explanation': 'No details available.', 'suggestion': 'Consult a professional.'})
+                        risk_summary += f"- **{factor.lower()}**: {details['explanation']} To reduce this risk, {details['suggestion']}\n"
+                if medium_risk_count > 0:
+                    risk_summary += "\n**Medium-Risk Factors:**\n"
+                    for factor in medium_risk_factors:
+                        details = risk_details.get(factor, {'explanation': 'No details available.', 'suggestion': 'Consult a professional.'})
+                        risk_summary += f"- **{factor.lower()}**: {details['explanation']} To reduce this risk, {details['suggestion']}\n"
+                risk_summary += "\nMaking small changes based on these suggestions can significantly improve your health over time!"
+            else:
+                risk_summary += f" With {high_risk_count} high-risk and {medium_risk_count} medium-risk lifestyle factors (total risk score {total_risk_score:.2f}/~1.6), the AI predicts you may have {final_prediction.replace('_', ' ').lower()}."
+
+        st.markdown("### 🕸️ Lifestyle Radar")
         labels, user_vals, avg_vals = normalize_radar(input_data)
-        
+
         with st.expander("❓ How to read the radar?"):
             st.markdown("""
             - Each axis represents one healthy habit. The further out (closer to 1), the better.
-            - Solid blue line represents **your data**; dashed blue line shows the **average** for your age and gender.
+            - Solid blue line represents **your data**; dashed blue line shows the **average** for your age and gender (general benchmark).
             - Gaps toward the center indicate areas for improvement.
             """)
-        
+
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(
             r=user_vals,
@@ -592,36 +756,8 @@ def main():
             )
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        
-        # Calculate BMI
-        bmi = weight / (height ** 2)
-        bmi_percentage = min(bmi / 40 * 100, 100)
-        bmi_obesity_level = get_bmi_obesity_level(bmi)
-        
-        # Analyze risk factors for display
-        risk_df, high_risk_count, medium_risk_count, total_risk_score, high_risk_factors = analyze_risk_factors(input_data)
-        
-        # Log the calculated total risk score and contributions for debugging
-        logging.info(f"Calculated Total Risk Score: {total_risk_score:.2f}")
-        logging.info(f"Risk Factor Contributions: {risk_df[['Risk Factor', 'Contribution']].to_dict('records')}")
-        
-        # Get AI-predicted obesity level
-        ai_prediction, ai_message = get_ai_obesity_level(input_data, bmi, high_risk_count, medium_risk_count, total_risk_score)
-        if ai_prediction is None:
-            st.warning(f"AI prediction failed: {ai_message}. Falling back to BMI-based prediction.")
-            ai_prediction = bmi_obesity_level
-            risk_summary = f"Your BMI is {bmi:.1f}, which falls in the {bmi_obesity_level.replace('_', ' ').lower()} range according to WHO standards. The AI prediction failed (reason: {ai_message}), so we're using the BMI-based result for now."
-        else:
-            # Generate detailed risk summary with specific high-risk factors
-            if high_risk_count > 0:
-                risk_factors_text = ", ".join([factor.lower() for factor in high_risk_factors[:3]])  # Limit to top 3 for brevity
-                if len(high_risk_factors) > 3:
-                    risk_factors_text += f", and {len(high_risk_factors) - 3} other high-risk factors"
-                risk_summary = f"Your BMI is {bmi:.1f}, which falls in the {bmi_obesity_level.replace('_', ' ').lower()} range according to WHO standards. However, due to significant lifestyle risks, including {risk_factors_text} ({high_risk_count} high-risk factors, total risk score of {total_risk_score:.2f} out of ~1.6), the AI predicts you may have {ai_prediction.replace('_', ' ').lower()}. This suggests a higher health risk due to these lifestyle factors."
-            else:
-                risk_summary = f"Your BMI is {bmi:.1f}, which falls in the {bmi_obesity_level.replace('_', ' ').lower()} range according to WHO standards. With {high_risk_count} high-risk and {medium_risk_count} medium-risk lifestyle factors (total risk score {total_risk_score:.2f}/~1.6), the AI predicts you may have {ai_prediction.replace('_', ' ').lower()}."
-        
-        st.markdown("### ⚠️ Lifestyle Risk Factor Analysis")
+
+        st.markdown("### 📊 Lifestyle Risk Factor Analysis")
         st.markdown("""
             <div class='risk-table'>
                 <table>
@@ -634,13 +770,13 @@ def main():
                     {}
                 </table>
             </div>
+            <p><span class='tooltip-icon' title='Click for more details'>ℹ️ Details</span></p>
         """.format(''.join(
             f"<tr><td>{row['Risk Factor']}</td><td>{row['User Input']}</td><td>{row['Risk Level']}</td><td>{row['Contribution']:.2f}</td></tr>"
             for _, row in risk_df.iterrows()
         )), unsafe_allow_html=True)
-        
-        st.markdown("#### 📈 Calculation Details")
-        with st.expander("📒 View WHO BMI Reference Table"):
+
+        with st.expander("❓ View WHO BMI Reference Table"):
             st.markdown("""
                 <div class='bmi-table'>
                     <table>
@@ -656,8 +792,8 @@ def main():
                 f"<tr><td>{row['BMI Range']}</td><td>{row['Obesity Level'].replace('_', ' ')}</td></tr>"
                 for _, row in bmi_ranges.iterrows()
             )), unsafe_allow_html=True)
-        
-        with st.expander("📊 How Total Risk Score is Calculated"):
+
+        with st.expander("❓ How Total Risk Score is Calculated"):
             st.markdown("""
                 <div class='bmi-table'>
                     <table>
@@ -666,29 +802,24 @@ def main():
                             <th>Risk Level</th>
                             <th>Weight</th>
                             <th>Condition for Risk</th>
-                            <th>Contribution Formula</th>
+                            <th>Approx. Contribution (if risk present)</th>
                         </tr>
-                        <tr><td>Family history of overweight</td><td>High</td><td>0.3</td><td>Yes</td><td>0.3 if Yes, else 0</td></tr>
-                        <tr><td>Frequent high-calorie food</td><td>High</td><td>0.25</td><td>Yes</td><td>0.25 × 0.533 if Yes, else 0</td></tr>
-                        <tr><td>Vegetable consumption frequency</td><td>High (Low intake)</td><td>0.2</td><td>≤3 times/week</td><td>0.2 × 0.2 if ≤3, else 0</td></tr>
-                        <tr><td>Main meal frequency</td><td>Medium</td><td>0.1</td><td><2 or >4 times/day</td><td>0.1 × 0.133 × 0.5 if condition met, else 0</td></tr>
-                        <tr><td>Food consumption between meals</td><td>High</td><td>0.2</td><td>Always</td><td>0.2 × 0.267 if Always, else 0</td></tr>
-                        <tr><td>Smoking</td><td>Medium</td><td>0.1</td><td>Yes</td><td>0.1 × 0.133 × 0.5 if Yes, else 0</td></tr>
-                        <tr><td>Physical activity frequency</td><td>High (Insufficient)</td><td>0.25</td><td>≤2 times/week</td><td>0.25 × 0.333 if ≤2, else 0</td></tr>
-                        <tr><td>High-calorie drink consumption</td><td>High</td><td>0.2</td><td>Yes</td><td>0.2 × 0.333 if Yes, else 0</td></tr>
-                        <tr><td>Transportation mode</td><td>Medium</td><td>0.1</td><td>Automobile or Motorbike</td><td>0.1 × 0.067 × 0.5 if condition met, else 0</td></tr>
+                        <tr><td>Family history of overweight</td><td>High</td><td>0.30</td><td>Yes</td><td>0.30 * (2.5-1)/(2.5-1) = 0.30</td></tr>
+                        <tr><td>Frequent high-calorie food</td><td>High</td><td>0.25</td><td>Yes</td><td>0.25 * (1.8-1)/(2.5-1) ≈ 0.13</td></tr>
+                        <tr><td>Vegetable consumption frequency</td><td>High (Low intake)</td><td>0.20</td><td>≤3 times/week</td><td>0.20 * (1.3-1)/(2.5-1) ≈ 0.06</td></tr>
+                        <tr><td>Main meal frequency</td><td>Medium</td><td>0.10</td><td><2 or >4 times/day</td><td>0.10 * (1.2-1)/(2.5-1) * 0.5 ≈ 0.05</td></tr>
+                        <tr><td>Food consumption between meals</td><td>High</td><td>0.20</td><td>Always</td><td>0.20 * (1.4-1)/(2.5-1) ≈ 0.12</td></tr>
+                        <tr><td>Smoking</td><td>Medium</td><td>0.10</td><td>Yes</td><td>0.10 * (1.2-1)/(2.5-1) * 0.5 ≈ 0.05</td></tr>
+                        <tr><td>Physical activity frequency</td><td>High (Insufficient)</td><td>0.25</td><td>≤2 times/week</td><td>0.25 * (1.5-1)/(2.5-1) ≈ 0.13</td></tr>
+                        <tr><td>High-calorie drink consumption</td><td>High</td><td>0.20</td><td>Yes</td><td>0.20 * (1.5-1)/(2.5-1) ≈ 0.10</td></tr>
+                        <tr><td>Transportation mode</td><td>Medium</td><td>0.10</td><td>Automobile or Motorbike</td><td>0.10 * (1.1-1)/(2.5-1) * 0.5 ≈ 0.05</td></tr>
                     </table>
                 </div>
-                <p>The <strong>Total Risk Score</strong> is calculated by summing the contributions of risk factors, standardized by their relative risk impact:</p>
-                <ul>
-                    <li><strong>High-risk factors</strong>: Contribute weight × (odds ratio - 1) / max(odds ratio - 1). E.g., family history contributes 0.3 × 1.0 = 0.30 if "Yes".</li>
-                    <li><strong>Medium-risk factors</strong>: Contribute half their weight × (odds ratio - 1) / max(odds ratio - 1). E.g., smoking contributes 0.1 × 0.133 × 0.5 ≈ 0.01 if "Yes".</li>
-                    <li><strong>Total possible score</strong>: Approximately 1.6 (sum of high-risk weights).</li>
-                </ul>
-                <p><strong>Example</strong>: For a user with family history (0.30), high-calorie food (0.25 × 0.533 ≈ 0.13), low physical activity (0.25 × 0.333 ≈ 0.08), and smoking (0.1 × 0.133 × 0.5 ≈ 0.01), the Total Risk Score is 0.30 + 0.13 + 0.08 + 0.01 ≈ 0.52.</p>
-                <p><span class='tooltip-icon' title='Source: Frayling et al. (2007). A Common Variant in the FTO Gene Is Associated with Body Mass Index. Science, 316(5826), 889-894; WHO (2000). Obesity: Preventing and Managing the Global Epidemic. WHO Technical Report Series 894.'>ℹ️ Source: Frayling et al. (2007), WHO (2000)</span></p>
+                <p>The <strong>Total Risk Score</strong> is calculated by summing the contributions of risk factors, standardized by their relative risk impact (using normalized Odds Ratios). High-risk factors contribute their full normalized weight, while medium-risk factors contribute half their normalized weight.</p>
+                <p><strong>Example:</strong> A user with family history (0.30), frequent high-calorie food (0.13), low physical activity (0.13), and smoking (0.05) might have a total risk score of 0.30 + 0.13 + 0.13 + 0.05 = 0.61.</p>
+                <p><span class='tooltip-icon' title='Source: Based on common epidemiological studies and risk factor analysis. Specific weights and ORs are illustrative approximations.'>ℹ️ Source: Illustrative, based on epidemiological data.</span></p>
             """, unsafe_allow_html=True)
-        
+
         st.markdown(f"""
             <div class='calc-details'>
                 <p><strong>Calculated BMI:</strong> {bmi:.2f}</p>
@@ -698,7 +829,7 @@ def main():
                 <p><strong>Total Risk Score:</strong> {total_risk_score:.2f} (out of ~1.6)</p>
             </div>
         """, unsafe_allow_html=True)
-        
+
         result_style = {
             'Normal_Weight': 'normal',
             'Insufficient_Weight': 'underweight',
@@ -707,12 +838,17 @@ def main():
             'Obesity_Type_I': 'obesity',
             'Obesity_Type_II': 'obesity',
             'Obesity_Type_III': 'obesity'
-        }.get(ai_prediction, 'normal')
+        }.get(final_prediction, 'normal')
 
-        st.markdown("### 📊 Prediction Result")
+        st.markdown("### 🏆 Prediction Result")
+        # Append to sidebar history
+        q_summary = f"Predicting obesity level（BMI={bmi:.1f}）"
+        a_summary = f"AI prediction results：{final_prediction.replace('_', ' ')}"
+        st.session_state.chat_history.append((q_summary, a_summary))
+
         st.markdown(f"""
             <div class='result-box {result_style}'>
-                <div class='result-text'>AI-Predicted Obesity Level: {ai_prediction.replace('_', ' ')}<span class='emoji-pulse'>🎯</span></div>
+                <div class='result-text'>AI-Predicted Obesity Level: {final_prediction.replace('_', ' ')}<span class='emoji-pulse'>🍎</span></div>
                 <p>BMI: {bmi:.1f} (Calculated)</p>
                 <div class='progress-bar'>
                     <div class='progress-fill' style='width: {bmi_percentage}%'></div>
@@ -721,15 +857,17 @@ def main():
                 <p><em>Note: The AI prediction considers lifestyle factors and is powered by a large language model. BMI is calculated using the standard formula (weight/height²).</em></p>
             </div>
         """, unsafe_allow_html=True)
-        
+
         with st.expander("💡 View Health Suggestions", expanded=True):
-            if ai_prediction in suggestions:
+            if final_prediction in suggestions:
                 st.markdown(f"""
                     <div class='suggestion-box {result_style}'>
-                        <span class='suggestion-icon'>{suggestions[ai_prediction]['icon']}</span>
-                        <span class='suggestion-text'>{suggestions[ai_prediction]['text']}</span>
+                        <span class='suggestion-icon'>{suggestions[final_prediction]['icon']}</span>
+                        <span class='suggestion-text'>{suggestions[final_prediction]['text']}</span>
                     </div>
                 """, unsafe_allow_html=True)
+            else:
+                st.info("No specific suggestions available for this prediction level. Consult a healthcare professional.")
 
 if __name__ == "__main__":
     main()

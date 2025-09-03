@@ -8,6 +8,23 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 import requests
 import re
+import random
+
+# Check for API Key from main page
+if not st.session_state.get("api_key"):
+    st.markdown(
+        """
+        <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
+            🥗 7-Day Smart Meal Planner
+        </h1>
+        <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
+        Customize your weekly meal plan based on your preferences and personal information!
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+    st.warning("⚠️ Please go to the sidebar and enter a valid API key in FitForge_Hub🚀 page")
+    st.stop()
 
 # Configure logging for debugging
 logging.basicConfig(
@@ -256,45 +273,45 @@ bmi_ranges = pd.DataFrame({
 
 # Extended Fallback image mapping for dishes
 FALLBACK_IMAGES = {
-    "Oats & Berries Bowl": "https://www.google.com/imgres?q=ats%20%26%20Berries%20Bowl&imgurl=https%3A%2F%2Fimg.taste.com.au%2FHF2K6LfF%2Ftaste%2F2016%2F11%2Foat-and-berry-acai-bowl-104111-1.jpeg&imgrefurl=https%3A%2F%2Fwww.taste.com.au%2Frecipes%2Foat-berry-acai-bowl%2Faf1dd66f-80bc-4b37-bfa5-f226610e061c&docid=dOdGzwFmynv4NM&tbnid=buCb6h7tNK3eSM&vet=12ahUKEwi1jNuJgLWPAxW8UvUHHV3TE78QM3oECB8QAA..i&w=3000&h=2000&hcb=2&ved=2ahUKEwi1jNuJgLWPAxW8UvUHHV3TE78QM3oECB8QAA",
-    "Egg & Avocado Toast": "https://www.google.com/imgres?q=Egg%20%26%20Avocado%20Toast&imgurl=https%3A%2F%2Fwww.allrecipes.com%2Fthmb%2FKy6yT_-juhi_bO8OPI2ZL9cXojc%3D%2F1500x0%2Ffilters%3Ano_upscale()%3Amax_bytes(150000)%3Astrip_icc()%2FAvocadoToastwithEggFranceC2x1-d73da05afae3436fa9b0b72430fab3d6.jpg&imgrefurl=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F265304%2Favocado-toast-with-egg%2F&docid=XWl51lDbENBltM&tbnid=INTYnn7dY4zkGM&vet=12ahUKEwjc7JWVgLWPAxW2k68BHXodOn8QM3oECBcQAA..i&w=1500&h=750&hcb=2&ved=2ahUKEwjc7JWVgLWPAxW2k68BHXodOn8QM3oECBcQAA0",
-    "Greek Yogurt Parfait": "https://www.google.com/imgres?q=Greek%20Yogurt%20Parfait&imgurl=https%3A%2F%2Fwww.homemadefoodjunkie.com%2Fwp-content%2Fuploads%2F2021%2F07%2FUntitled-design-84.jpg&imgrefurl=https%3A%2F%2Fwww.homemadefoodjunkie.com%2Fgreek-yogurt-parfait%2F&docid=QoiCcG-P8TFfRM&tbnid=LqQoPbt_wml-jM&vet=12ahUKEwjZ_4C5gLWPAxXVbvUHHeNuGT8QM3oECCQQAA..i&w=1500&h=1000&hcb=2&ved=2ahUKEwjZ_4C5gLWPAxXVbvUHHeNuGT8QM3oECCQQAA",
-    "Grilled Chicken Salad": "https://www.google.com/imgres?q=grilled%20chicken%20salad&imgurl=https%3A%2F%2Fwww.simplyrecipes.com%2Fthmb%2FKFI2R9ZgZag1tUPFKXgTBEoblIg%3D%2F1500x0%2Ffilters%3Ano_upscale()%3Amax_bytes(150000)%3Astrip_icc()%2FSImply-Recipes-Grilled-Chicken-Greek-Salad-LEAD-2-f4854b96ee4d4da08d8155de3c7454b8.jpg&imgrefurl=https%3A%2F%2Fwww.simplyrecipes.com%2Fgreek-grilled-chicken-salad-recipe-11746322&docid=Te1F_X-5B7pxEM&tbnid=i-gBw_dommDmIM&vet=12ahUKEwif6sPogLWPAxU8oq8BHRirCwsQM3oECCgQAA..i&w=1500&h=1000&hcb=2&ved=2ahUKEwif6sPogLWPAxU8oq8BHRirCwsQM3oECCgQAA",
-    "Tofu Stir-fry": "https://www.google.com/imgres?q=Tofu%20Stir-fry&imgurl=https%3A%2F%2Fheatherchristo.com%2Fwp-content%2Fuploads%2F2020%2F02%2F49580825886_3bb8047334_o-scaled.jpg&imgrefurl=https%3A%2F%2Fheatherchristo.com%2F2020%2F02%2F24%2Fcrispy-tofu-basil-stir-fry%2F&docid=qqrgttks-NRq5M&tbnid=HCOhT5dbxsjt_M&vet=12ahUKEwjs3IWjgbWPAxVTkq8BHY-aAzAQM3oECC8QAA..i&w=2560&h=1707&hcb=2&ved=2ahUKEwjs3IWjgbWPAxVTkq8BHY-aAzAQM3oECC8QAA",
-    "Quinoa Salad": "https://www.google.com/imgres?q=Quinoa%20Salad&imgurl=https%3A%2F%2Fimages.themodernproper.com%2Fproduction%2Fposts%2FQuinoaSalad_9.jpg%3Fw%3D960%26h%3D960%26q%3D82%26fm%3Djpg%26fit%3Dcrop%26dm%3D1739653270%26s%3D19c15d2fbe8a13e80443bd959a547b39&imgrefurl=https%3A%2F%2Fthemodernproper.com%2Fquinoa-salad&docid=wLZytgjOhPQ_OM&tbnid=nsuJKLfuqF8JUM&vet=12ahUKEwj78patgbWPAxWpcvUHHUCjG9UQM3oECCgQAA..i&w=960&h=960&hcb=2&ved=2ahUKEwj78patgbWPAxWpcvUHHUCjG9UQM3oECCgQAA",
-    "Baked Cod & Veg": "https://www.google.com/imgres?q=Baked%20Cod%20%26%20Veg&imgurl=https%3A%2F%2Fyoungsseafood.co.uk%2Fwp-content%2Fuploads%2F2015%2F04%2FCod-Fillets-Roasted-Veg-Sauce-Vierge.jpg&imgrefurl=https%3A%2F%2Fyoungsseafood.co.uk%2Frecipes%2Fcod-fillets-roasted-vegetables-sauce-vierge%2F&docid=pMMq4HnjttVAFM&tbnid=00KaQAUx31aSZM&vet=12ahUKEwjW2o65gbWPAxXjga8BHbNDIQkQM3oECCAQAA..i&w=1400&h=600&hcb=2&ved=2ahUKEwjW2o65gbWPAxXjga8BHbNDIQkQM3oECCAQAA",
-    "Lentil Curry": "https://www.google.com/imgres?q=Lentil%20Curry&imgurl=https%3A%2F%2Fwww.noracooks.com%2Fwp-content%2Fuploads%2F2022%2F07%2Flentil-curry-7.jpg&imgrefurl=https%3A%2F%2Fwww.noracooks.com%2Flentil-curry%2F&docid=PMt72Jcp8_EiyM&tbnid=EAcvnIo0MEWE6M&vet=12ahUKEwj3-v7EgbWPAxX8ma8BHU2lOoIQM3oECBgQAA..i&w=1334&h=1334&hcb=2&ved=2ahUKEwj3-v7EgbWPAxX8ma8BHU2lOoIQM3oECBgQAA",
-    "Grilled Salmon": "https://www.google.com/imgres?q=Grilled%20Salmo&imgurl=https%3A%2F%2Fwww.thespruceeats.com%2Fthmb%2FHgM2h42z1HGEcSWkWk5CgAjDDpQ%3D%2F1500x0%2Ffilters%3Ano_upscale()%3Amax_bytes(150000)%3Astrip_icc()%2Fhow-to-grill-salmon-2216658-hero-01-a9c948f8a238400ebaafc0caf509c7fa.jpg&imgrefurl=https%3A%2F%2Fwww.thespruceeats.com%2Fhow-to-grill-salmon-2216658&docid=-l1ILQpHN2uOXM&tbnid=qfUxsKbPOpEFGM&vet=12ahUKEwi0pfLRgbWPAxWAg68BHS08HkUQM3oECCYQAA..i&w=1500&h=1001&hcb=2&ved=2ahUKEwi0pfLRgbWPAxWAg68BHS08HkUQM3oECCYQAA",
-    "Greek Yogurt with Berries": "https://www.google.com/imgres?q=Greek%20Yogurt%20with%20Berries&imgurl=https%3A%2F%2Fusa.fage%2Fsites%2Fusa.fage%2Ffiles%2FFage_Recipe_Tiles_B_600x420_Apr21_Plain_Loaded_BowlsA_Hero_1291_RGB.jpg&imgrefurl=https%3A%2F%2Fusa.fage%2Frecipes%2Fgreek-yogurt-recipes%2Fmixed-berry-yogurt-bowl&docid=M0OOvEb5-jkAPM&tbnid=mvF76oCGAQphlM&vet=12ahUKEwjJwOncgbWPAxW2j68BHSAiFy0QM3oECBgQAA..i&w=600&h=420&hcb=2&ved=2ahUKEwjJwOncgbWPAxW2j68BHSAiFy0QM3oECBgQAA",
-    "Grilled Chicken Quinoa Bowl": "https://www.google.com/imgres?q=Grilled%20Chicken%20Quinoa%20Bowl&imgurl=https%3A%2F%2Ffood.fnr.sndimg.com%2Fcontent%2Fdam%2Fimages%2Ffood%2Ffullset%2F2020%2F03%2F06%2FWU2412__chicken-quinoa-bowl_s4x3.jpg.rend.hgtvcom.1280.960.suffix%2F1583516899411.webp&imgrefurl=https%3A%2F%2Fwww.foodnetwork.com%2Frecipes%2Free-drummond%2Fchicken-quinoa-bowl-8356446&docid=wbFXFOoOKZBUOM&tbnid=mE9C8ikPLzzdjM&vet=12ahUKEwiHyLzngbWPAxWKga8BHV_EI7gQM3oECBsQAA..i&w=1280&h=960&hcb=2&ved=2ahUKEwiHyLzngbWPAxWKga8BHV_EI7gQM3oECBsQAA",
-    "Baked Salmon with Sweet Potato": "https://www.google.com/imgres?q=Baked%20Salmon%20with%20Sweet%20Potato&imgurl=https%3A%2F%2Fwww.hwcmagazine.com%2Fwp-content%2Fuploads%2F2018%2F01%2FIMG_8216.jpg&imgrefurl=https%3A%2F%2Fwww.hwcmagazine.com%2Frecipe%2Fbaked-spicy-salmon-sweet-potato-kale-hash%2F&docid=cCIcJ8SnFXO80M&tbnid=wZBnclNJexaPvM&vet=12ahUKEwipuOzugbWPAxX5a_UHHUyGAgsQM3oECCcQAA..i&w=700&h=525&hcb=2&ved=2ahUKEwipuOzugbWPAxX5a_UHHUyGAgsQM3oECCcQAA",
-    "Veggie Omelette": "https://www.google.com/imgres?q=Veggie%20Omelette&imgurl=https%3A%2F%2Fjoybauer.com%2Fwp-content%2Fuploads%2F2016%2F02%2Fegg-veggie-omelet-1.jpg&imgrefurl=https%3A%2F%2Fjoybauer.com%2Fhealthy-recipes%2Ffiesta-vegetable-omelet%2F&docid=SgB57ftT9vU_SM&tbnid=J_98mNgG9-J1gM&vet=12ahUKEwjc_oeVgrWPAxVUna8BHWD-DMMQM3oECB4QAA..i&w=1000&h=667&hcb=2&ved=2ahUKEwjc_oeVgrWPAxVUna8BHWD-DMMQM3oECB4QAA",
-    "Lentil Salad with Tuna": "https://www.google.com/imgres?q=Lentil%20Salad%20with%20Tuna&imgurl=https%3A%2F%2Fgirlheartfood.com%2Fwp-content%2Fuploads%2F2021%2F12%2FTuna-Lentil-Salad-2.jpg&imgrefurl=https%3A%2F%2Fgirlheartfood.com%2Fmediterranean-lentil-salad%2F&docid=aEGRTyAR_ucm-M&tbnid=4m9wB4txKP4w5M&vet=12ahUKEwjho6CfgrWPAxVPSfUHHS6TGiEQM3oECB0QAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwjho6CfgrWPAxVPSfUHHS6TGiEQM3oECB0QAA",
-    "Turkey Stir Fry": "https://www.google.com/imgres?q=Turkey%20Stir%20Fry&imgurl=https%3A%2F%2Flemonsandzest.com%2Fwp-content%2Fuploads%2F2020%2F11%2FGround-Turkey-Teriyaki-2.15.jpg&imgrefurl=https%3A%2F%2Flemonsandzest.com%2Fground-turkey-teriyaki-stir-fry%2F&docid=-F8SrAftNkvaVM&tbnid=STpgRV1hoF3VQM&vet=12ahUKEwiwxaOrgrWPAxVIa_UHHYAfDf0QM3oECB4QAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwiwxaOrgrWPAxVIa_UHHYAfDf0QM3oECB4QAA",
-    "Smoothie Bowl": "https://www.google.com/imgres?q=Smoothie%20Bowl&imgurl=https%3A%2F%2Fhealthfulblondie.com%2Fwp-content%2Fuploads%2F2022%2F06%2FHomemade-Healthy-Protein-Acai-Bowl.jpg&imgrefurl=https%3A%2F%2Fhealthfulblondie.com%2Fbest-homemade-acai-bowl%2F&docid=X2E3IqrkPvz9WM&tbnid=4C7KijXJumWkCM&vet=12ahUKEwjokOa5grWPAxVTZ_UHHdCuJ5EQM3oFCIEBEAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwjokOa5grWPAxVTZ_UHHdCuJ5EQM3oFCIEBEAA",
-    "Whole Wheat Turkey Wrap": "https://www.google.com/imgres?q=Whole%20Wheat%20Turkey%20Wrap&imgurl=https%3A%2F%2Fcorp.commissaries.com%2Fsites%2Fdefault%2Ffiles%2Fstyles%2Frecipe_node_image%2Fpublic%2F2021-06%2FTurkey%2520and%2520Avocado%2520Wrap%2520with%2520Red%2520Pepper%2520Hummus.png%3Fitok%3DifEt62fY&imgrefurl=https%3A%2F%2Fcorp.commissaries.com%2Frecipes%2Fturkey-and-avocado-wrap-red-pepper-hummus&docid=GsqIICYI2DFt0M&tbnid=QbQONChDSXsvuM&vet=12ahUKEwj08MvKgrWPAxV1dfUHHWK3GykQM3oECDAQAA..i&w=800&h=600&hcb=2&ved=2ahUKEwj08MvKgrWPAxV1dfUHHWK3GykQM3oECDAQAA",
-    "Zucchini Noodles": "https://www.google.com/imgres?q=Zucchini%20Noodles&imgurl=https%3A%2F%2Fwww.jessicagavin.com%2Fwp-content%2Fuploads%2F2018%2F05%2Fzucchini-noodles-5-1200.jpg&imgrefurl=https%3A%2F%2Fwww.jessicagavin.com%2Fhow-to-make-zucchini-noodles%2F&docid=GxzAsHiLOqCYhM&tbnid=nWNYqdy4BWwdHM&vet=12ahUKEwiH19DUgrWPAxWpc_UHHe4yF8YQM3oECCwQAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwiH19DUgrWPAxWpc_UHHe4yF8YQM3oECCwQAA",
-    "Chickpea and Spinach Curry": "https://www.google.com/imgres?q=Chickpea%20and%20Spinach%20Curry&imgurl=https%3A%2F%2Fthefoodiephysician.com%2Fwp-content%2Fuploads%2F2014%2F10%2Fchickpea-curry-500x375.jpg&imgrefurl=https%3A%2F%2Fthefoodiephysician.com%2Fchickpea-and-spinach-curry%2F&docid=f515JgRsGBobzM&tbnid=WYUd5P-jmeMjIM&vet=12ahUKEwi919fggrWPAxXTrq8BHSpJHRwQM3oECCkQAA..i&w=500&h=375&hcb=2&ved=2ahUKEwi919fggrWPAxXTrq8BHSpJHRwQM3oECCkQAA",
-    "Stuffed Bell Peppers": "https://www.google.com/imgres?q=Stuffed%20Bell%20Peppers&imgurl=https%3A%2F%2Fwww.allrecipes.com%2Fthmb%2FeBsB2933MCuNVCim4O-AyCR97YE%3D%2F1500x0%2Ffilters%3Ano_upscale()%3Amax_bytes(150000)%3Astrip_icc()%2F79805-StuffedPeppersWithturkeyAndVegtables-MFS-2x3-0048-444ecb49b0184daab29e5326e4330af3.jpg&imgrefurl=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F79805%2Fstuffed-peppers-with-turkey-and-vegetables%2F&docid=x9GO3_EaC46ymM&tbnid=plO5-afXFYis9M&vet=12ahUKEwjHvcHsgrWPAxXjnq8BHRMZFuYQM3oECCEQAA..i&w=1500&h=1125&hcb=2&ved=2ahUKEwjHvcHsgrWPAxXjnq8BHRMZFuYQM3oECCEQAA",
-    "Cottage Cheese with Fruit": "https://www.google.com/imgres?q=Cottage%20Cheese%20with%20Fruit&imgurl=https%3A%2F%2Fwww.midwestliving.com%2Fthmb%2FV97-U0Bub42Oe0gewPJh2lIA_hE%3D%2F1500x0%2Ffilters%3Ano_upscale()%3Amax_bytes(150000)%3Astrip_icc()%2FPASSANO_MWL0621_KeyIng_CottageCheese_Salad_8544_preview-dd1d0cff26494514a2b92cf126f029e9.jpg&imgrefurl=https%3A%2F%2Fwww.midwestliving.com%2Frecipe%2Fbasil-fruit-salad-with-cottage-cheese%2F&docid=hT4AlJDnnBOIXM&tbnid=Az1Clzhvlt7uGM&vet=12ahUKEwiDg6r3grWPAxW5cfUHHRlZF_0QM3oECFQQAA..i&w=1500&h=1000&hcb=2&ved=2ahUKEwiDg6r3grWPAxW5cfUHHRlZF_0QM3oECFQQAA",
-    "Tuna and Bean Salad": "https://www.google.com/imgres?q=Tuna%20and%20Bean%20Salad&imgurl=https%3A%2F%2Fxoxobella.com%2Fwp-content%2Fuploads%2F2023%2F05%2Fitalian_tuna_white_bean_salad_055.jpg&imgrefurl=https%3A%2F%2Fxoxobella.com%2Fitalian-tuna-white-bean-salad%2F&docid=YFpCVsj3gapqUM&tbnid=mIx2MAw792QU4M&vet=12ahUKEwig7-e8g7WPAxVQafUHHYNVEZIQM3oECBwQAA..i&w=1200&h=675&hcb=2&ved=2ahUKEwig7-e8g7WPAxVQafUHHYNVEZIQM3oECBwQAA",
-    "Grilled Chicken with Veggies": "https://www.google.com/imgres?q=Grilled%20Chicken%20with%20Veggies&imgurl=https%3A%2F%2Frecipes.heart.org%2Fen%2F-%2Fmedia%2FAHA%2FRecipe%2FRecipe-Images%2FGrilled-Chicken-with-Vegetables-sized.jpg%3Fiar%3D0%26mw%3D890%26sc_lang%3Den&imgrefurl=https%3A%2F%2Frecipes.heart.org%2Fen%2Frecipes%2Fgrilled-chicken-with-vegetables&docid=26P1cVajGS9gXM&tbnid=z2F1Vfk2gmHAYM&vet=12ahUKEwj1i5bUg7WPAxXvc_UHHYs0E88QM3oECBkQAA..i&w=618&h=346&hcb=2&ved=2ahUKEwj1i5bUg7WPAxXvc_UHHYs0E88QM3oECBkQAA",
-    "Overnight Oats": "https://www.google.com/imgres?q=Overnight%20Oats&imgurl=https%3A%2F%2Fthedeliciousplate.com%2Fwp-content%2Fuploads%2F2024%2F04%2FOvernight-oats-with-frozen-fruit-9.jpg&imgrefurl=https%3A%2F%2Fthedeliciousplate.com%2Fovernight-oats-with-frozen-fruit%2F&docid=Y29WTGeiYJAzEM&tbnid=vkU8FPFKTDw-JM&vet=12ahUKEwix0rrjg7WPAxXDsqgCHRm5IXwQM3oECGQQAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwix0rrjg7WPAxXDsqgCHRm5IXwQM3oECGQQAA",
-    "Quinoa and Chickpea Salad": "https://www.google.com/imgres?q=Quinoa%20and%20Chickpea%20Salad&imgurl=https%3A%2F%2Fwww.eatwell101.com%2Fwp-content%2Fuploads%2F2021%2F02%2FHealthy-Chickpea-Quinoa-Salad-recipe-1-1200x800.jpg&imgrefurl=https%3A%2F%2Fwww.eatwell101.com%2Fchickpea-quinoa-salad-recipe&docid=T-A0AQ_sAOB17M&tbnid=ficWSiGgLoRmSM&vet=12ahUKEwjw_b3yg7WPAxU0fPUHHSo4FR8QM3oECB8QAA..i&w=1200&h=800&hcb=2&ved=2ahUKEwjw_b3yg7WPAxU0fPUHHSo4FR8QM3oECB8QAA",
-    "Shrimp Stir Fry": "https://www.google.com/imgres?q=Shrimp%20Stir%20Fry&imgurl=https%3A%2F%2Fwww.jessicagavin.com%2Fwp-content%2Fuploads%2F2018%2F01%2Fshrimp-stir-fry7-1200.jpg&imgrefurl=https%3A%2F%2Fwww.jessicagavin.com%2Feasy-shrimp-stir-fry%2F&docid=ZdnUYK8rgaqeOM&tbnid=fDQeSAiHCKxjVM&vet=12ahUKEwj456SGhLWPAxVQafUHHYNVEZIQM3oECCEQAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwj456SGhLWPAxVQafUHHYNVEZIQM3oECCEQAA",
-    "Egg and Veggie Scramble": "https://www.google.com/imgres?q=Egg%20and%20Veggie%20Scramble&imgurl=https%3A%2F%2Fmerryabouttown.com%2Fwp-content%2Fuploads%2F2014%2F01%2FEasy-Paleo-Breakfast-Messy-Egg-Bacon-and-Veggie-Scramble-720x540.jpg&imgrefurl=https%3A%2F%2Fmerryabouttown.com%2Fpaleo-breakfast-messy-egg-bacon-veggie-scramble%2F&docid=v-uHOHKkJI1v-M&tbnid=VD1DfQOMSo5fQM&vet=12ahUKEwifv9OShLWPAxW5sK8BHcRYGeQQM3oECCYQAA..i&w=720&h=540&hcb=2&ved=2ahUKEwifv9OShLWPAxW5sK8BHcRYGeQQM3oECCYQAA",
-    "Lentil Soup": "https://www.google.com/imgres?q=Lentil%20Soup&imgurl=https%3A%2F%2Fwww.connoisseurusveg.com%2Fwp-content%2Fuploads%2F2023%2F12%2Fitalian-lentil-soup-sq-2.jpg&imgrefurl=https%3A%2F%2Fwww.connoisseurusveg.com%2Fitalian-lentil-soup%2F&docid=xjS-Fazy8AQl1M&tbnid=atWWyBd5Fvb8kM&vet=12ahUKEwihqNOdhLWPAxXDdfUHHS0lItAQM3oECCAQAA..i&w=1200&h=1200&hcb=2&ved=2ahUKEwihqNOdhLWPAxXDdfUHHS0lItAQM3oECCAQAA",
-    "Baked Chicken Thighs": "https://www.google.com/imgres?q=Baked%20Chicken%20Thighs&imgurl=https%3A%2F%2Fdownshiftology.com%2Fwp-content%2Fuploads%2F2019%2F02%2FCrispy-Baked-Chicken-Thighs-main.jpg&imgrefurl=https%3A%2F%2Fdownshiftology.com%2Frecipes%2Fcrispy-baked-chicken-thighs%2F&docid=T8LHGEceug90yM&tbnid=AcynF33i2YwDtM&vet=12ahUKEwjwhaGxhLWPAxVKe_UHHYynNOMQM3oECCAQAA..i&w=1600&h=1067&hcb=2&ved=2ahUKEwjwhaGxhLWPAxVKe_UHHYynNOMQM3oECCAQAA",
-    "Mediterranean Chickpea Bowl": "https://images.unsplash.com/photo-1505576391880-b3f9d713dc4f?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Vegetable Sushi Roll": "https://images.unsplash.com/photo-1579586337215-9c35e0017805?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Thai Green Curry": "https://images.unsplash.com/photo-1593504102882-3f28e1a4a591?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Baked Tofu with Veggies": "https://images.unsplash.com/photo-1528798834-c90d2b2b2606?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Falafel Wrap": "https://images.unsplash.com/photo-1604908812561-6bd1c0a49d8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Miso Soup with Tofu": "https://images.unsplash.com/photo-1604908812561-6bd1c0a49d8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Spaghetti Squash": "https://images.unsplash.com/photo-1603133872878-684f209f57b7?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Fallback Breakfast Dish": "https://images.unsplash.com/photo-1493770348161-369560ae357d?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Fallback Lunch Dish": "https://images.unsplash.com/photo-1546069901-ba9599a7e7ec?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-    "Fallback Dinner Dish": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120"
+    "Oats & Berries Bowl": "https://img2.baidu.com/it/u=4230460056,2597757457&fm=253&fmt=auto&app=138&f=JPEG?w=686&h=500.jpg",
+    "Egg & Avocado Toast": "https://www.jessicagavin.com/wp-content/uploads/2020/07/avocado-toast-20.jpg",
+    "Greek Yogurt Parfait": "https://myeverydaytable.com/wp-content/uploads/YogurtParfait-7.jpg",
+    "Grilled Chicken Salad": "https://img0.baidu.com/it/u=3785619211,3605961101&fm=253&fmt=auto&app=138&f=JPEG?w=681&h=500.jpg",
+    "Tofu Stir-fry": "https://img2.baidu.com/it/u=1373407432,4063135306&fm=253&fmt=auto&app=120&f=JPEG?w=872&h=500.jpg",
+    "Quinoa Salad": "https://img2.baidu.com/it/u=2977731160,2906746483&fm=253&fmt=auto&app=138&f=JPEG?w=371&h=247.jpg",
+    "Baked Cod & Veg": "https://img0.baidu.com/it/u=3855779815,2942985540&fm=253&fmt=auto&app=138&f=JPEG?w=515&h=500.jpg",
+    "Lentil Curry": "https://img1.baidu.com/it/u=1085263699,3156093026&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=747.jpg",
+    "Grilled Salmon": "https://img0.baidu.com/it/u=1614082101,2058372571&fm=253&fmt=auto&app=138&f=JPEG?w=681&h=500.jpg",
+    "Greek Yogurt with Berries": "https://img0.baidu.com/it/u=3072303642,3292055252&fm=253&fmt=auto&app=138&f=JPEG?w=372&h=247.jpg",
+    "Grilled Chicken Quinoa Bowl": "https://gips2.baidu.com/it/u=3583929422,3202639676&fm=3074&app=3074&f=JPEG?w=1857&h=1336&type=normal&func=T.jpg",
+    "Baked Salmon with Sweet Potato": "https://img2.baidu.com/it/u=3918213213,723548576&fm=253&fmt=auto&app=138&f=JPEG?w=428&h=285.jpg",
+    "Veggie Omelette": "https://qcloud.dpfile.com/pc/XPfoOHVXay6x3sIv9HEbo97coXoyHGbagwab2BpeNNqddsqsSsc-Nlpxeueo9Ou6.jpg",
+    "Lentil Salad with Tuna": "https://img1.baidu.com/it/u=136919957,3673211005&fm=253&fmt=auto&app=138&f=JPEG?w=776&h=500.jpg",
+    "Turkey Stir Fry": "https://img1.baidu.com/it/u=2339721432,454675603&fm=253&fmt=auto&app=138&f=JPEG?w=667&h=500.jpg",
+    "Smoothie Bowl": "https://img0.baidu.com/it/u=1120659700,3981340333&fm=253&app=138&f=JPEG?w=500&h=652.jpg",
+    "Whole Wheat Turkey Wrap": "https://img0.baidu.com/it/u=2225449939,3281285977&fm=253&fmt=auto&app=138&f=JPEG?w=671&h=500.jpg",
+    "Zucchini Noodles": "https://img1.baidu.com/it/u=68976516,2487486160&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=616.jpg",
+    "Chickpea and Spinach Curry": "https://img2.baidu.com/it/u=4028398599,4175896441&fm=253&fmt=auto?w=1200&h=800.jpg",
+    "Stuffed Bell Peppers": "https://img0.baidu.com/it/u=2880936394,2877277857&fm=253&fmt=auto&app=138&f=JPEG?w=455&h=304.jpg",
+    "Cottage Cheese with Fruit": "https://img1.baidu.com/it/u=1940315113,1076483978&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=333",
+    "Tuna and Bean Salad": "https://img1.baidu.com/it/u=3080151194,525246636&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=500.jpg",
+    "Grilled Chicken with Veggies": "https://img1.baidu.com/it/u=3948725571,3102824782&fm=253&fmt=auto&app=138&f=JPEG?w=514&h=500.jpg",
+    "Overnight Oats": "https://img2.baidu.com/it/u=1956992169,4136788662&fm=253&fmt=auto&app=138&f=JPEG?w=509&h=500.jpg",
+    "Quinoa and Chickpea Salad": "https://img0.baidu.com/it/u=3571550826,1410301313&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=652.jpg",
+    "Shrimp Stir Fry": "https://img2.baidu.com/it/u=23070658,1949138698&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=667.jpg",
+    "Egg and Veggie Scramble": "https://pic.rmb.bdstatic.com/bjh/240118/c8c52c1409980a7d278ab32ec8b58c5b1291.jpeg.jpg",
+    "Lentil Soup": "https://img1.baidu.com/it/u=841389781,2107563934&fm=253&fmt=auto&app=120&f=JPEG?w=682&h=1023.jpg",
+    "Baked Chicken Thighs": "https://img1.baidu.com/it/u=3108058182,712928160&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=667.jpg",
+    "Mediterranean Chickpea Bowl": "https://img2.baidu.com/it/u=2237125653,3962951722&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=664.jpg",
+    "Vegetable Sushi Roll": "https://qcloud.dpfile.com/pc/yhO7fjhU5yUP3ipJPfpLrXqFAIfDHEmTusH3fq7szzVwSlNDOb86AJm5jcwCW_og.jpg",
+    "Thai Green Curry": "https://img2.baidu.com/it/u=3279478426,2180878125&fm=253&fmt=auto&app=138&f=JPEG?w=667&h=500.jpg",
+    "Baked Tofu with Veggies": "https://img2.baidu.com/it/u=50065624,2459776987&fm=253&fmt=auto&app=138&f=JPEG?w=668&h=500.jpg",
+    "Falafel Wrap": "https://img2.baidu.com/it/u=429177048,4235961126&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=657.jpg",
+    "Miso Soup with Tofu": "https://img0.baidu.com/it/u=215810027,2181767460&fm=253&fmt=auto&app=138&f=JPEG?w=750&h=500.jpg",
+    "Spaghetti Squash": "https://qcloud.dpfile.com/pc/NUovHdke-H0NF5qK7cU1KNNLgLIGUkWxQg6oQGWBrw36yiiYeocFIjl9YnOm2Umq.jpg",
+    "Fallback Breakfast Dish": "https://img0.baidu.com/it/u=1642982904,40582365&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1067.jpg",
+    "Fallback Lunch Dish": "https://img2.baidu.com/it/u=255562951,3727218015&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=375.jpg",
+    "Fallback Dinner Dish": "https://img1.baidu.com/it/u=245802027,453897840&fm=253&fmt=auto&app=138&f=JPEG?w=500&h=666.jpg"
 }
 
 # Fallback Recipe Database
@@ -437,6 +454,12 @@ RECIPE_DB = {
 if "dish_cache" not in st.session_state:
     st.session_state["dish_cache"] = {}
 
+# Initialize OpenAI client if API key is available
+if "api_key" in st.session_state and st.session_state["api_key"]:
+    client = OpenAI(api_key=st.session_state["api_key"])
+else:
+    client = None
+
 # Function to validate image URL using requests
 def validate_image_url(url):
     if not url or not url.startswith("https://"):
@@ -492,365 +515,165 @@ def analyze_risk_factors(input_data):
             is_risk = factor['value'] == factor['condition']
         
         risk_level = factor['risk'] if is_risk else 'Neutral'
-        if is_risk:
-            if 'High' in factor['risk']:
-                high_risk_count += 1
-                total_risk_score += factor['weight']
-            elif 'Medium' in factor['risk']:
-                medium_risk_count += 1
-                total_risk_score += factor['weight'] * 0.5
-        
         risk_summary.append({
-            'Risk Factor': factor['name'],
-            'User Input': str(factor['value']),
-            'Risk Level': risk_level
+            'Factor': factor['name'],
+            'Value': factor['value'],
+            'Risk': risk_level,
+            'Weight': factor['weight']
         })
+        if is_risk:
+            total_risk_score += factor['weight']
+            if 'High' in risk_level:
+                high_risk_count += 1
+            elif 'Medium' in risk_level:
+                medium_risk_count += 1
     
     return pd.DataFrame(risk_summary), high_risk_count, medium_risk_count, total_risk_score
 
-# API Key Check
-if "api_key" not in st.session_state or not st.session_state["api_key"]:
-    st.warning("⚠️ Please enter a valid API key in the 🗣️ NL2SQL page.")
-    st.stop()
-try:
-    client = OpenAI(
-        api_key=st.session_state["api_key"],
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        timeout=60
-    )
-except AuthenticationError:
-    logging.error("Failed to initialize OpenAI client: Invalid API key")
-    st.error("⚠️ Invalid API key. Please verify your API key in the 🗣️ NL2SQL page and check the DashScope console (https://dashscope.aliyun.com/).")
-    st.stop()
-except Exception as e:
-    logging.error(f"Failed to initialize OpenAI client: {e}")
-    st.error(f"Failed to initialize API client: {e}. Please verify your API key in the 🗣️ NL2SQL page and check the DashScope console (https://dashscope.aliyun.com/).")
-    st.stop()
+# Function to generate a single dish using API or fallback
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type((AuthenticationError, RateLimitError, APIConnectionError)))
+def ai_generate_single_dish(obesity_level, user_inputs, preferences, cuisine, difficulty, exclude_ingredients, day, meal):
+    if client is None or not st.session_state.get("api_key"):
+        # Fallback to RECIPE_DB
+        dishes = list(RECIPE_DB[meal].keys())
+        filtered_dishes = [dish for dish in dishes if meets_filter_criteria(
+            RECIPE_DB[meal][dish], preferences, cuisine, difficulty, exclude_ingredients
+        )]
+        if not filtered_dishes:
+            filtered_dishes = dishes
+        dish_name = random.choice(filtered_dishes)
+        dish_data = RECIPE_DB[meal][dish_name].copy()
+        dish_data["dish"] = dish_name
+        dish_data["day"] = day
+        dish_data["meal"] = meal
+        return dish_data
 
-# Generate Single Dish with Cache and Local DB Priority
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), retry=retry_if_exception_type(Exception))
-def ai_generate_single_dish(obesity_level: str, user: dict, prefs, cuisine, difficulty, exclude, day: str, meal: str):
-    cache_key = f"{obesity_level}_{meal}_{cuisine}_{difficulty}_{'_'.join(sorted(prefs))}_{'_'.join(sorted(exclude))}_{day}"
-    if cache_key in st.session_state["dish_cache"]:
-        logging.info(f"Using cached dish for {cache_key}")
-        dish = st.session_state["dish_cache"][cache_key].copy()
-        dish["day"] = day
-        dish["meal"] = meal
-        return dish
-
-    # Try local database first
-    available_dishes = []
-    for dish_name, dish_data in RECIPE_DB.get(meal, {}).items():
-        if meets_filter_criteria(dish_data, prefs, cuisine, difficulty, exclude):
-            available_dishes.append((dish_name, dish_data))
-    
-    if available_dishes:
-        import random
-        dish_name, dish_data = random.choice(available_dishes)
-        dish = {
-            "day": day,
-            "meal": meal,
-            "dish": dish_name,
-            "calories": dish_data["calories"],
-            "protein": dish_data["protein"],
-            "carbohydrates": dish_data["carbohydrates"],
-            "fat": dish_data["fat"],
-            "ingredients": dish_data["ingredients"],
-            "steps": dish_data["steps"],
-            "image_url": dish_data["image_url"],
-            "is_fallback": True
-        }
-        st.session_state["dish_cache"][cache_key] = dish.copy()
-        return dish
-
-    dietary_constraints = []
-    if "Vegetarian" in prefs:
-        dietary_constraints.append("Must be vegetarian (no meat, fish, or poultry).")
-    if "High-Protein" in prefs:
-        dietary_constraints.append("Must prioritize high-protein ingredients (e.g., legumes, tofu, lean meats, eggs; at least 25g protein).")
-    if "Low-Carb" in prefs:
-        dietary_constraints.append("Must minimize carbohydrates (e.g., limit grains, starchy vegetables; max 40g carbs).")
-    if "Gluten-Free" in prefs:
-        dietary_constraints.append("Must exclude gluten-containing ingredients (e.g., wheat, barley, rye).")
-    
     prompt = f"""
-You are a nutritionist AI. Generate a unique single dish for obesity level "{obesity_level}" for {meal} on {day}.
-User BMI: {user['weight']/user['height']**2:.1f}
-Daily goals: 2000 kcal / 50 g protein / 200 g carbs / 70 g fat
-Preferences: {', '.join(prefs) if prefs else 'None'}
-Cuisine: {cuisine}
-Difficulty: {difficulty}
-Exclude ingredients: {', '.join(exclude) if exclude else 'None'}
-Dietary constraints: {', '.join(dietary_constraints) if dietary_constraints else 'None'}
+    Generate a single {meal} dish for a 7-day meal plan tailored to a user with the following profile:
+    - Obesity Level: {obesity_level}
+    - Gender: {user_inputs['gender']}
+    - Age: {user_inputs['age']}
+    - Height: {user_inputs['height']} m
+    - Weight: {user_inputs['weight']} kg
+    - Dietary Preferences: {', '.join(preferences) if preferences else 'None'}
+    - Cuisine Type: {cuisine if cuisine != 'Any' else 'Any'}
+    - Cooking Difficulty: {difficulty if difficulty != 'Any' else 'Any'}
+    - Excluded Ingredients: {', '.join(exclude_ingredients) if exclude_ingredients else 'None'}
+    - Day: {day}
+    - Target Calories: {user_inputs['target_calories']} kcal (daily total)
+    - Target Protein: {user_inputs['target_protein']} g (daily total)
+    - Target Carbohydrates: {user_inputs['target_carbohydrates']} g (daily total)
+    - Target Fat: {user_inputs['target_fat']} g (daily total)
 
-The dish must:
-- Follow WHO nutrition guidelines for balanced macronutrients.
-- Be tailored to the obesity level to promote healthy weight management.
-- Strictly adhere to user preferences: {', '.join(prefs) if prefs else 'None'}.
-- Match the specified cuisine: {cuisine}.
-- Match the specified difficulty level: {difficulty} (e.g., Easy: minimal steps; Medium: moderate prep; Hard: complex techniques).
-- Exclude specified ingredients: {', '.join(exclude) if exclude else 'None'}.
-- Include a real image URL (from Unsplash or Pexels, 280x120 pixels) that exactly matches the dish name and description.
-- Ensure the dish name and description are consistent with the provided image and avoid repetition with common dishes (e.g., no duplicates like 'Oats & Berries Bowl').
-Return **ONLY** a valid JSON object with keys: day, meal, dish, calories, protein, carbohydrates, fat, ingredients, steps, image_url, is_fallback. Do not include any additional text or Markdown.
-Example:
-{{
-  "day": "{day}",
-  "meal": "{meal}",
-  "dish": "Spicy Tofu Stir-fry",
-  "calories": 350,
-  "protein": 20,
-  "carbohydrates": 30,
-  "fat": 15,
-  "ingredients": "Tofu, bell peppers, soy sauce, chili paste",
-  "steps": "Stir-fry tofu and peppers with soy sauce and chili.",
-  "image_url": "https://images.unsplash.com/photo-1528798834-c90d2b2b2606?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-  "is_fallback": false
-}}
-"""
+    Provide the dish in JSON format with the following fields:
+    - dish: Name of the dish
+    - calories: Estimated calories (kcal)
+    - carbohydrates: Estimated carbohydrates (g)
+    - protein: Estimated protein (g)
+    - fat: Estimated fat (g)
+    - ingredients: Comma-separated list of ingredients
+    - steps: Cooking instructions with difficulty level (Easy, Medium, Hard)
+    - image_url: A valid HTTPS URL for an image of the dish
+    Ensure the dish aligns with the user's preferences, cuisine, difficulty, and excludes specified ingredients.
+    """
     try:
-        with st.spinner("Fetching AI-generated dish..."):
-            resp = client.chat.completions.create(
-                model="qwen-plus",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                timeout=120
-            )
-        response_text = resp.choices[0].message.content.strip()
-        logging.debug(f"LLM prompt for single dish: {prompt}")
-        logging.debug(f"LLM response for single dish: {response_text}")
-        if not response_text:
-            raise ValueError("Empty response from LLM")
-        try:
-            # Clean response
-            response_text = re.sub(r'^```json\n|\n```$', '', response_text).strip()
-            dish = json.loads(response_text)
-            if not isinstance(dish, dict):
-                raise ValueError("Invalid JSON structure: not a dictionary")
-            required_keys = ["day", "meal", "dish", "calories", "protein", "carbohydrates", "fat", "ingredients", "steps", "image_url"]
-            if not all(key in dish for key in required_keys):
-                raise ValueError(f"Missing required JSON fields: {set(required_keys) - set(dish.keys())}")
-            # Add is_fallback flag
-            dish["is_fallback"] = False
-            # Validate image URL
-            is_valid = validate_image_url(dish["image_url"])
-            if not is_valid:
-                dish["image_url"] = FALLBACK_IMAGES.get(dish["dish"], FALLBACK_IMAGES[f"Fallback {meal} Dish"])
-            # Cache the dish
-            st.session_state["dish_cache"][cache_key] = dish.copy()
-            return dish
-        except json.JSONDecodeError as e:
-            logging.error(f"Invalid JSON format in single dish response: {e}. Raw response: {response_text}")
-            st.error(f"Failed to parse dish response: Invalid JSON format ({e}). Using fallback dish.")
-            dish = {
-                "day": day,
-                "meal": meal,
-                "dish": f"Fallback {meal} Dish",
-                "calories": 350,
-                "protein": 15,
-                "carbohydrates": 40,
-                "fat": 10,
-                "ingredients": "Generic ingredients",
-                "steps": "Prepare as needed.",
-                "image_url": FALLBACK_IMAGES[f"Fallback {meal} Dish"],
-                "is_fallback": True
-            }
-            st.session_state["dish_cache"][cache_key] = dish.copy()
-            return dish
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            timeout=120
+        )
+        dish_data = json.loads(response.choices[0].message.content)
+        if not validate_image_url(dish_data.get("image_url")):
+            dish_data["image_url"] = FALLBACK_IMAGES.get(dish_data["dish"], FALLBACK_IMAGES[f"Fallback {meal} Dish"])
+        dish_data["day"] = day
+        dish_data["meal"] = meal
+        return dish_data
     except Exception as e:
-        logging.error(f"AI single dish generation failed: {e}. Raw response: {response_text if 'response_text' in locals() else 'None'}")
-        st.error(f"Failed to generate dish: {e}. Using fallback dish.")
-        dish = {
-            "day": day,
-            "meal": meal,
-            "dish": f"Fallback {meal} Dish",
-            "calories": 350,
-            "protein": 15,
-            "carbohydrates": 40,
-            "fat": 10,
-            "ingredients": "Generic ingredients",
-            "steps": "Prepare as needed.",
-            "image_url": FALLBACK_IMAGES[f"Fallback {meal} Dish"],
-            "is_fallback": True
-        }
-        st.session_state["dish_cache"][cache_key] = dish.copy()
-        return dish
+        logging.error(f"Failed to generate dish via API: {str(e)}. Using fallback.")
+        dishes = list(RECIPE_DB[meal].keys())
+        filtered_dishes = [dish for dish in dishes if meets_filter_criteria(
+            RECIPE_DB[meal][dish], preferences, cuisine, difficulty, exclude_ingredients
+        )]
+        if not filtered_dishes:
+            filtered_dishes = dishes
+        dish_name = random.choice(filtered_dishes)
+        dish_data = RECIPE_DB[meal][dish_name].copy()
+        dish_data["dish"] = dish_name
+        dish_data["day"] = day
+        dish_data["meal"] = meal
+        return dish_data
 
-# Generate 7-Day Meal Plan with Local DB Priority
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(5), retry=retry_if_exception_type(Exception))
-def ai_generate_7day_plan(obesity_level: str, user: dict, prefs, cuisine, difficulty, exclude, base_date: datetime):
-    cache_key = f"plan_{obesity_level}_{cuisine}_{difficulty}_{'_'.join(sorted(prefs))}_{'_'.join(sorted(exclude))}_{base_date.strftime('%Y-%m-%d')}"
-    if cache_key in st.session_state["dish_cache"]:
-        logging.info(f"Using cached meal plan for {cache_key}")
-        df = st.session_state["dish_cache"][cache_key].copy()
-        df["day"] = pd.Categorical(df["day"], categories=[(base_date + timedelta(days=i)).strftime("%a %m-%d") for i in range(7)], ordered=True)
-        return df
+# Function to generate 7-day meal plan
+def ai_generate_7day_plan(obesity_level, user_inputs, preferences, cuisine, difficulty, exclude_ingredients, base_date):
+    days = [(base_date + timedelta(days=i)).strftime("%A, %b %d") for i in range(7)]
+    meals = ["Breakfast", "Lunch", "Dinner"]
+    meal_plan = []
 
-    dietary_constraints = []
-    if "Vegetarian" in prefs:
-        dietary_constraints.append("Must be vegetarian (no meat, fish, or poultry).")
-    if "High-Protein" in prefs:
-        dietary_constraints.append("Must prioritize high-protein ingredients (e.g., legumes, tofu, lean meats, eggs; at least 25g protein).")
-    if "Low-Carb" in prefs:
-        dietary_constraints.append("Must minimize carbohydrates (e.g., limit grains, starchy vegetables; max 40g carbs).")
-    if "Gluten-Free" in prefs:
-        dietary_constraints.append("Must exclude gluten-containing ingredients (e.g., wheat, barley, rye).")
-    
-    prompt = f"""
-You are a nutritionist AI. Create a 7-day meal plan (breakfast/lunch/dinner) for obesity level "{obesity_level}".
-User BMI: {user['weight']/user['height']**2:.1f}
-Start date: {base_date.strftime("%Y-%m-%d")}
-Daily goals: 2000 kcal / 50 g protein / 200 g carbs / 70 g fat
-Preferences: {', '.join(prefs) if prefs else 'None'}
-Cuisine: {cuisine}
-Difficulty: {difficulty}
-Exclude ingredients: {', '.join(exclude) if exclude else 'None'}
-Dietary constraints: {', '.join(dietary_constraints) if dietary_constraints else 'None'}
-
-The meal plan must:
-- Follow WHO nutrition guidelines for balanced macronutrients.
-- Be tailored to the obesity level to promote healthy weight management.
-- Strictly adhere to user preferences: {', '.join(prefs) if prefs else 'None'}.
-- Match the specified cuisine: {cuisine}.
-- Match the specified difficulty level: {difficulty} (e.g., Easy: minimal steps; Medium: moderate prep; Hard: complex techniques).
-- Exclude specified ingredients: {', '.join(exclude) if exclude else 'None'}.
-- Include a real image URL (from Unsplash or Pexels, 280x120 pixels) that exactly matches the dish name and description.
-- Ensure the dish name and description are consistent with the provided image and avoid repetitive dishes.
-- Provide a diverse set of dishes to enhance variety (e.g., different proteins, vegetables, cooking methods).
-Return **ONLY** a valid JSON list with exactly 21 entries (7 days × 3 meals), each with keys: day, meal, dish, calories, protein, carbohydrates, fat, ingredients, steps, image_url, is_fallback. Do not include any additional text or Markdown.
-Example:
-[{{
-  "day": "{base_date.strftime("%a %m-%d")}",
-  "meal": "Breakfast",
-  "dish": "Spicy Tofu Stir-fry",
-  "calories": 350,
-  "protein": 20,
-  "carbohydrates": 30,
-  "fat": 15,
-  "ingredients": "Tofu, bell peppers, soy sauce, chili paste",
-  "steps": "Stir-fry tofu and peppers with soy sauce and chili.",
-  "image_url": "https://images.unsplash.com/photo-1528798834-c90d2b2b2606?ixlib=rb-4.0.3&auto=format&fit=crop&w=280&h=120",
-  "is_fallback": false
-}}, ...]
-"""
-    try:
-        with st.spinner("Generating your personalized meal plan... 🥗"):
-            resp = client.chat.completions.create(
-                model="qwen-plus",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                timeout=60
-            )
-        response_text = resp.choices[0].message.content.strip()
-        logging.debug(f"LLM prompt for meal plan: {prompt}")
-        logging.debug(f"Raw LLM response for meal plan: {response_text}")
-        if not response_text:
-            raise ValueError("Empty response from LLM")
-        try:
-            # Clean response
-            response_text = re.sub(r'^```json\n|\n```$', '', response_text).strip()
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
-            if json_match:
-                response_text = json_match.group(0)
-            else:
-                raise ValueError("No valid JSON array found in response")
-            logging.debug(f"Cleaned LLM response: {response_text}")
-            
-            plan = json.loads(response_text)
-            if not isinstance(plan, list) or len(plan) != 21:
-                raise ValueError(f"Invalid JSON structure: expected a list with 21 entries, got {len(plan)} entries")
-            required_keys = ["day", "meal", "dish", "calories", "protein", "carbohydrates", "fat", "ingredients", "steps", "image_url", "is_fallback"]
-            for dish in plan:
-                if not all(key in dish for key in required_keys):
-                    raise ValueError(f"Missing required JSON fields in dish entry: {set(required_keys) - set(dish.keys())}")
-            # Validate image URLs in batch
-            urls = [dish["image_url"] for dish in plan]
-            valid_urls = batch_validate_urls(urls)
-            for dish, is_valid in zip(plan, valid_urls):
-                if not is_valid:
-                    dish["image_url"] = FALLBACK_IMAGES.get(dish["dish"], FALLBACK_IMAGES[f"Fallback {dish['meal']} Dish"])
-            df = pd.DataFrame(plan)
-            df["day"] = pd.Categorical(df["day"], categories=[(base_date + timedelta(days=i)).strftime("%a %m-%d") for i in range(7)], ordered=True)
-            st.session_state["dish_cache"][cache_key] = df.copy()
-            return df
-        except json.JSONDecodeError as e:
-            logging.error(f"Invalid JSON format in meal plan response: {e}. Raw response: {response_text}")
-            st.error(f"Failed to parse meal plan response: Invalid JSON format ({e}). Using fallback meal plan.")
-            return build_recipes_fallback(user, prefs, cuisine, difficulty, exclude, base_date)
-    except Exception as e:
-        logging.error(f"AI meal plan generation failed: {e}. Raw response: {response_text if 'response_text' in locals() else 'None'}")
-        st.error(f"Failed to generate meal plan: {e}. Using fallback meal plan.")
-        return build_recipes_fallback(user, prefs, cuisine, difficulty, exclude, base_date)
-
-# Fallback Recipe Generation
-def build_recipes_fallback(user, preferences, cuisine, difficulty, exclude_ingredients, base_date: datetime):
-    import random
-    days = [(base_date + timedelta(days=i)).strftime("%a %m-%d") for i in range(7)]
-    recipes = []
     for day in days:
-        for meal in ["Breakfast", "Lunch", "Dinner"]:
-            available_dishes = []
-            for dish in RECIPE_DB[meal].keys():
-                dish_data = RECIPE_DB[meal][dish]
-                if meets_filter_criteria(dish_data, preferences, cuisine, difficulty, exclude_ingredients):
-                    available_dishes.append(dish)
-            if not available_dishes:
-                new_dish = ai_generate_single_dish(
-                    user.get("obesity_level", "Normal_Weight"),
-                    user,
-                    preferences,
-                    cuisine,
-                    difficulty,
-                    exclude_ingredients,
-                    day,
-                    meal
-                )
-                recipes.append(new_dish)
+        for meal in meals:
+            cache_key = f"{obesity_level}_{meal}_{cuisine}_{difficulty}_{'_'.join(sorted(preferences))}_{'_'.join(sorted(exclude_ingredients))}_{day}"
+            if cache_key in st.session_state["dish_cache"]:
+                dish = st.session_state["dish_cache"][cache_key].copy()
+                dish["day"] = day
+                dish["meal"] = meal
             else:
-                dish = random.choice(available_dishes)
-                data = RECIPE_DB[meal][dish]
-                recipes.append({
-                    "day": day, "meal": meal, "dish": dish,
-                    "calories": data["calories"], "protein": data["protein"],
-                    "carbohydrates": data["carbohydrates"], "fat": data["fat"],
-                    "ingredients": data["ingredients"], "steps": data["steps"],
-                    "image_url": data["image_url"],
-                    "is_fallback": True
-                })
-    df = pd.DataFrame(recipes)
+                dish = ai_generate_single_dish(obesity_level, user_inputs, preferences, cuisine, difficulty, exclude_ingredients, day, meal)
+                st.session_state["dish_cache"][cache_key] = dish.copy()
+            meal_plan.append(dish)
+
+    df = pd.DataFrame(meal_plan)
     df["day"] = pd.Categorical(df["day"], categories=days, ordered=True)
+    df = df.sort_values(["day", "meal"])
     return df
 
 # Function to check if a dish meets filter criteria
 def meets_filter_criteria(dish_data, preferences, cuisine, difficulty, exclude_ingredients):
     include_dish = True
-    if any(exclude.lower() in dish_data["ingredients"].lower() for exclude in exclude_ingredients):
+    dish_name = dish_data.get("dish", "")
+    ingredients = dish_data.get("ingredients", "").lower().split(",")
+    
+    # Check dietary preferences
+    if "Vegetarian" in preferences and any(ing in ["chicken", "salmon", "cod", "tuna", "turkey", "shrimp"] for ing in ingredients):
         include_dish = False
-    if "Vegetarian" in preferences and any(ing.lower() in dish_data["ingredients"].lower() for ing in ["chicken", "cod", "salmon", "tuna", "turkey"]):
+    if "High-Protein" in preferences and dish_data.get("protein", 0) < 15:
         include_dish = False
-    if "Gluten-Free" in preferences and any(ing.lower() in dish_data["ingredients"].lower() for ing in ["wheat", "barley", "rye", "bread", "pita"]):
+    if "Low-Carb" in preferences and dish_data.get("carbohydrates", 0) > 30:
         include_dish = False
-    if "High-Protein" in preferences and dish_data["protein"] < 25:
+    if "Gluten-Free" in preferences and any(ing in ["wheat", "bread", "pita"] for ing in ingredients):
         include_dish = False
-    if "Low-Carb" in preferences and dish_data["carbohydrates"] > 40:
+    
+    # Check excluded ingredients
+    if any(exclude.lower() in ingredients for exclude in exclude_ingredients):
         include_dish = False
-    if cuisine != "Any" and cuisine.lower() not in dish_data["dish"].lower():
+    
+    # Check cuisine
+    if cuisine != "Any":
+        cuisine_keywords = {
+            "Asian": ["tofu", "soy sauce", "curry", "sushi", "miso"],
+            "Mediterranean": ["feta", "olive oil", "hummus", "quinoa"],
+            "American": ["chicken", "salad", "turkey"]
+        }
+        if not any(keyword in dish_name.lower() or keyword in ingredients for keyword in cuisine_keywords.get(cuisine, [])):
+            include_dish = False
+    
+    # Check difficulty
+    if difficulty != "Any" and difficulty.lower() not in dish_data.get("steps", "").lower():
         include_dish = False
-    if difficulty != "Any" and difficulty.lower() not in dish_data["steps"].lower():
-        include_dish = False
+    
     return include_dish
 
 # Sidebar Inputs
 with st.sidebar:
     st.markdown("### 🍎 Dietary Preferences")
     st.markdown(
-        "<div class='tip-box'>💡 Tip: To generate the 7-day meal plan faster, please set the filter conditions first (such as dietary preferences, cuisine type, cooking difficulty, and excluded ingredients).</div>",
+        "<div class='tip-box'>💡Tip: To generate a 7-day meal plan faster, it's best to set filter conditions first (such as dietary preferences, cuisine type, cooking difficulty, excluded ingredients, etc.).</div>",
         unsafe_allow_html=True
     )
-    preferences = st.multiselect("Dietary Preferences", ["Vegetarian", "High-Protein", "Low-Carb", "Gluten-Free"])
-    cuisine = st.selectbox("Cuisine Type", ["Any", "Asian", "Mediterranean", "American"])
-    difficulty = st.selectbox("Cooking Difficulty", ["Any", "Easy", "Medium", "Hard"])
-    exclude_ingredients = st.text_input("🚫 Excluded Ingredients (comma-separated)", "").split(",")
+    preferences = st.multiselect("Dietary Preferences", ["Vegetarian", "High-Protein", "Low-Carb", "Gluten-Free"], default=st.session_state.get("preferences", []))
+    cuisine = st.selectbox("Cuisine Type", ["Any", "Asian", "Mediterranean", "American"], index=["Any", "Asian", "Mediterranean", "American"].index(st.session_state.get("cuisine", "Any")))
+    difficulty = st.selectbox("Cooking Difficulty", ["Any", "Easy", "Medium", "Hard"], index=["Any", "Easy", "Medium", "Hard"].index(st.session_state.get("difficulty", "Any")))
+    exclude_ingredients = st.text_input("🚫 Excluded Ingredients (comma-separated)", value=",".join(st.session_state.get("exclude_ingredients", []))).split(",")
     exclude_ingredients = [x.strip().lower() for x in exclude_ingredients if x.strip()]
 
     if "full_df" in st.session_state:
@@ -893,41 +716,83 @@ with st.sidebar:
         st.session_state["favorites"] = []
     if st.session_state["favorites"]:
         for dish in st.session_state["favorites"]:
-            if st.button(dish, key=f"favorite_nav_{dish}", on_click=lambda d=dish: st.session_state.update({"selected_dish": d})):
-                st.session_state["scroll_to_dish"] = d
+            def set_selected_dish(dish_name):
+                st.session_state["selected_dish"] = dish_name
+                st.session_state["scroll_to_dish"] = dish_name
+
+            if st.button(dish, key=f"favorite_nav_{dish}", on_click=set_selected_dish, args=(dish,)):
+                pass  # Handled by on_click
         if st.button("🗑️ Clear All Favorites", key="clear_favorites"):
             st.session_state["favorites"] = []
             st.rerun()
     else:
         st.info("No favorite dishes yet. Add some from the meal plan! 🥳")
 
-# User Input Form
+    # Add debug button to clear session state
+    if st.button("🛠️ Debug: Clear Session State"):
+        st.session_state.clear()
+        st.rerun()
+
+# User Input Form with synchronized defaults from FitForge_Hub🚀.py
 with st.form("plan_form"):
     st.markdown("##### 🪪 Personal Information")
     c1, c2 = st.columns(2)
     with c1:
-        gender = st.selectbox("⚧️ Gender", ["Male", "Female"])
-        age = st.slider("🎂 Age", 0, 120, 30)
-        family_history = st.selectbox("🧑‍🧒 Family History of Obesity", ["Yes", "No"])
+        gender = st.selectbox("⚧️ Gender", ["Male", "Female"], index=["Male", "Female"].index(st.session_state.get("gender", "Male")))
+        age = st.slider("🎂 Age", 0, 120, value=st.session_state.get("age", 30))
+        family_history = st.selectbox("🧑‍🧒 Family History of Obesity", ["Yes", "No"], index=["yes", "no"].index(st.session_state.get("family_history_with_overweight", "No").lower()))
     with c2:
-        height = st.slider("📏 Height (meters)", 0.5, 2.5, 1.7, 0.01)
-        weight = st.slider("⚖️ Weight (kg)", 20.0, 200.0, 70.0, 0.1)
+        height = st.slider("📏 Height (meters)", 0.5, 2.5, value=st.session_state.get("height", 1.7) / 100, step=0.01)
+        weight = st.slider("⚖️ Weight (kg)", 20.0, 200.0, value=st.session_state.get("weight", 70.0), step=0.1)
 
     st.markdown("##### 🥕 Diet and Lifestyle")
     c3, c4 = st.columns(2)
     with c3:
-        vegetable_days = st.slider("🥬 Vegetable Consumption (days/week)", 0, 7, 3)
-        high_calorie_food = st.selectbox("🍿 High-Calorie Food", ["Yes", "No"])
-        main_meals = st.slider("🍚 Main Meals per Day", 1, 5, 3)
-        snack_frequency = st.selectbox("🍰 Snack Frequency", ["Always", "Frequently", "Occasionally"])
-        sugary_drinks = st.selectbox("🥤 Sugary Drinks", ["Yes", "No"])
-        water_intake = st.slider("💧 Daily Water Intake (liters)", 0.0, 5.0, 2.0, 0.1)
+        vegetable_days = st.slider("🥬 Vegetable Consumption (days/week)", 0, 7, value=st.session_state.get("fcvc", 3))
+        high_calorie_food = st.selectbox("🍿 High-Calorie Food", ["Yes", "No"], index=["yes", "no"].index(st.session_state.get("favc", "No").lower()))
+        main_meals = st.slider("🍚 Main Meals per Day", 1, 5, value=st.session_state.get("ncp", 3))
+        try:
+            snack_frequency = st.selectbox(
+                "🍰 Snack Frequency", 
+                ["No", "Sometimes", "Frequently", "Always"], 
+                index=["no", "sometimes", "frequently", "always"].index(st.session_state.get("caec", "sometimes").lower())
+            )
+        except ValueError:
+            snack_frequency = st.selectbox(
+                "🍰 Snack Frequency", 
+                ["No", "Sometimes", "Frequently", "Always"], 
+                index=1  # Default to "Sometimes"
+            )
+        sugary_drinks = st.selectbox("🥤 Sugary Drinks", ["Yes", "No"], index=["yes", "no"].index(st.session_state.get("scc", "No").lower()))
+        water_intake = st.slider("💧 Daily Water Intake (liters)", 0.0, 5.0, value=st.session_state.get("ch2o", 2.0), step=0.1)
     with c4:
-        alcohol_frequency = st.selectbox("🍷 Alcohol Frequency", ["None", "Occasionally", "Frequently"])
-        exercise_days = st.slider("🏋️ Exercise Days per Week", 0, 7, 2)
-        screen_time = st.slider("📱 Daily Screen Time (hours)", 0, 24, 3)
-        transportation = st.selectbox("🚗 Transportation Mode", ["Car", "Bicycle", "Motorcycle", "Public Transport", "Walking"])
-        smoke = st.selectbox("🚬 Smoking", ["Yes", "No"])
+        try:
+            alcohol_frequency = st.selectbox(
+                "🍷 Alcohol Frequency", 
+                ["No", "Sometimes", "Frequently"], 
+                index=["no", "sometimes", "frequently"].index(st.session_state.get("calc", "no").lower())
+            )
+        except ValueError:
+            alcohol_frequency = st.selectbox(
+                "🍷 Alcohol Frequency", 
+                ["No", "Sometimes", "Frequently"], 
+                index=0  # Default to "No"
+            )
+        exercise_days = st.slider("🏋️ Exercise Days per Week", 0, 7, value=st.session_state.get("faf", 2))
+        screen_time = st.slider("📱 Daily Screen Time (hours)", 0, 24, value=st.session_state.get("tue", 3))
+        try:
+            transportation = st.selectbox(
+                "🚗 Transportation Mode", 
+                ["Car", "Bicycle", "Motorcycle", "Public Transport", "Walking"], 
+                index=["Car", "Bicycle", "Motorcycle", "Public Transport", "Walking"].index(st.session_state.get("mtrans", "Public Transport"))
+            )
+        except ValueError:
+            transportation = st.selectbox(
+                "🚗 Transportation Mode", 
+                ["Car", "Bicycle", "Motorcycle", "Public Transport", "Walking"], 
+                index=3  # Default to "Public Transport"
+            )
+        smoke = st.selectbox("🚬 Smoking", ["Yes", "No"], index=["yes", "no"].index(st.session_state.get("smoke", "No").lower()))
 
     st.markdown("##### 🔛 Plan Start Date")
     base_date = st.date_input("Select Plan Start Date", min_value=datetime.now().date(), value=datetime.now().date())
@@ -937,16 +802,47 @@ with st.form("plan_form"):
 # Predict and Generate Meal Plan
 if submitted:
     user_inputs = {
-        "gender": gender, "age": age, "height": height, "weight": weight,
-        "family_history": family_history, "high_calorie_food": high_calorie_food,
-        "vegetable_days": vegetable_days, "main_meals": main_meals,
-        "snack_frequency": snack_frequency, "smoke": smoke,
-        "water_intake": water_intake, "sugary_drinks": sugary_drinks,
-        "exercise_days": exercise_days, "screen_time": screen_time,
-        "alcohol_frequency": alcohol_frequency, "transportation": transportation,
-        "target_calories": 2000, "target_protein": 50,
-        "target_carbohydrates": 200, "target_fat": 70
+        "gender": gender, 
+        "age": age, 
+        "height": height, 
+        "weight": weight,
+        "family_history": family_history, 
+        "high_calorie_food": high_calorie_food,
+        "vegetable_days": vegetable_days, 
+        "main_meals": main_meals,
+        "snack_frequency": snack_frequency, 
+        "smoke": smoke,
+        "water_intake": water_intake, 
+        "sugary_drinks": sugary_drinks,
+        "exercise_days": exercise_days, 
+        "screen_time": screen_time,
+        "alcohol_frequency": alcohol_frequency, 
+        "transportation": transportation,
+        "target_calories": 2000, 
+        "target_protein": 50,
+        "target_carbohydrates": 200, 
+        "target_fat": 70
     }
+    # Update session state to sync with FitForge_Hub🚀.py
+    st.session_state.update({
+        "gender": gender,
+        "age": age,
+        "height": height * 100,  # Convert meters to cm
+        "weight": weight,
+        "family_history_with_overweight": family_history.lower(),
+        "favc": high_calorie_food.lower(),
+        "fcvc": vegetable_days,
+        "ncp": main_meals,
+        "caec": snack_frequency.lower(),
+        "smoke": smoke.lower(),
+        "ch2o": water_intake,
+        "scc": sugary_drinks.lower(),
+        "faf": exercise_days,
+        "tue": screen_time,
+        "calc": alcohol_frequency.lower(),
+        "mtrans": transportation  # Keep as is, no .lower() to match selectbox options
+    })
+    
     bmi = weight / (height ** 2)
     bmi_percentage = min(bmi / 40 * 100, 100)
     bmi_obesity_level = get_bmi_obesity_level(bmi)
@@ -1002,13 +898,13 @@ if submitted:
     base_date = datetime.combine(base_date, datetime.min.time())
     with st.spinner("Generating your personalized meal plan... 🥗"):
         df = ai_generate_7day_plan(prediction, user_inputs, preferences, cuisine, difficulty, exclude_ingredients, base_date)
-    st.session_state["full_df"] = df
-    st.session_state["filtered_df"] = df
-    st.session_state["preferences"] = preferences
-    st.session_state["cuisine"] = cuisine
-    st.session_state["difficulty"] = difficulty
-    st.session_state["exclude_ingredients"] = exclude_ingredients
-    st.balloons()
+        st.session_state["full_df"] = df
+        st.session_state["filtered_df"] = df
+        st.session_state["preferences"] = preferences
+        st.session_state["cuisine"] = cuisine
+        st.session_state["difficulty"] = difficulty
+        st.session_state["exclude_ingredients"] = exclude_ingredients
+        st.balloons()
 
 # Display AI-Predicted Obesity Level if available
 if "prediction_html" in st.session_state:
@@ -1078,7 +974,6 @@ if "full_df" in st.session_state:
                                 df.loc[index[0], key] = value
                             st.session_state["full_df"] = df
                             st.session_state["filtered_df"] = df
-                            # Invalidate cache for this specific dish
                             cache_key = f"{st.session_state.get('obesity_level', 'Normal_Weight')}_{row['meal']}_{st.session_state.get('cuisine', 'Any')}_{st.session_state.get('difficulty', 'Any')}_{'_'.join(sorted(st.session_state.get('preferences', [])))}_{'_'.join(sorted(st.session_state.get('exclude_ingredients', [])))}_{row['day']}"
                             if cache_key in st.session_state["dish_cache"]:
                                 del st.session_state["dish_cache"][cache_key]
@@ -1127,14 +1022,11 @@ if "full_df" in st.session_state:
     daily["fat_diff"] = daily["fat"] - target_fat
     st.dataframe(daily)
 
-
-
-    # ---------- Nutrition Data Visualization (Supports Bar, Line, Area Charts) ----------
+    # Nutrition Data Visualization
     st.markdown('<div class="title">📈 Nutrition Trend Chart</div>', unsafe_allow_html=True)
     normalize_data = st.checkbox("Normalize Display (Relative to Target)", value=False, help="Normalize nutrient values to percentages of target values for comparison")
     chart_type = st.selectbox("Select Chart Type", ["Bar Chart", "Line Chart", "Area Chart"], help="Choose your preferred visualization type")
     
-    # Data normalization (optional)
     if normalize_data:
         daily_normalized = daily.copy()
         daily_normalized["calories"] = (daily["calories"] / target_calories) * 100
@@ -1150,7 +1042,6 @@ if "full_df" in st.session_state:
         hovertemplate_calories = "%{y:.1f} kcal"
         hovertemplate_nutrient = "%{y:.1f} g"
 
-    # Validate data to ensure numeric values
     for col in ["calories", "protein", "carbohydrates", "fat"]:
         daily_normalized[col] = pd.to_numeric(daily_normalized[col], errors="coerce").fillna(0)
 
@@ -1159,7 +1050,6 @@ if "full_df" in st.session_state:
     fill_mode = 'tozeroy' if chart_type == "Area Chart" else None
     
     if normalize_data:
-        # Normalized data uses a single y-axis
         fig.add_trace(trace_type(
             x=daily["day"], y=daily_normalized["calories"], name="Calories (kcal)",
             marker_color="rgba(34, 197, 94, 0.7)",
@@ -1197,7 +1087,6 @@ if "full_df" in st.session_state:
             hovermode="x unified"
         )
     else:
-        # Non-normalized data uses dual y-axes
         fig.add_trace(trace_type(
             x=daily["day"], y=daily_normalized["calories"], name="Calories (kcal)",
             marker_color="rgba(34, 197, 94, 0.7)",

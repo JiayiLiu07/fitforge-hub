@@ -1,6 +1,6 @@
 # FitForge Hub：人工智能驱动的全方位健康管理平台 🚀
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.48+-FF4B4B.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
@@ -52,7 +52,7 @@ cd big_data_project/feature/0002-FitForge_Hub
 ```
 
 2. **设置 Python 环境**：
-   - 确保安装 Python 3.8 或更高版本：
+   - 确保安装 Python 3.9 或更高版本：
      ```bash
      python --version
      ```
@@ -82,7 +82,9 @@ pip install -r requirements.txt
 
 ## 运行说明 🚀
 
-启动 Streamlit 应用程序：
+启动 Streamlit 应用程序 
+`【请确保你使用的是虚拟环境中的streamlit】`
+
 ```bash
 streamlit run "FitForge Hub🚀.py"
 ```
@@ -108,6 +110,7 @@ pyspark==4.0.0
 scikit-learn==1.7.1
 xgboost==3.1.0
 ```
+- 若在本地运行，需在本地配置好spark的环境
 
 ### 验证依赖版本
 - 查看当前环境包版本：
@@ -118,26 +121,13 @@ xgboost==3.1.0
   ```bash
   pip freeze > requirements.txt
   ```
-- 检查 Python 版本（推荐 3.8 或更高）：
+- 检查 Python 版本（推荐 3.9 或更高）：
   ```bash
   python --version
   ```
 
 **注意**：依赖版本可能需根据实际环境调整，可通过 PyPI（https://pypi.org/）确认最新版本。
 
-## 运行测试套件的说明 🧪
-
-当前项目未包含自动化测试套件。未来可通过以下方式添加测试：
-- 使用 `pytest` 框架编写单元测试，验证数据处理、模型预测和可视化功能。
-- 安装 `pytest`：
-  ```bash
-  pip install pytest
-  ```
-- 创建 `tests` 文件夹，添加测试脚本（如 `test_nl2sql.py`），并运行：
-  ```bash
-  pytest tests/
-  ```
-建议测试数据输入、API 调用和可视化输出的正确性。
 
 ## 已知问题 ⚠️
 
