@@ -379,10 +379,6 @@ def get_ai_obesity_level(input_data, bmi, high_risk_count, medium_risk_count, to
     API_KEY = st.session_state.get("api_key") or os.getenv("DASHSCOPE_API_KEY")
     
     if not API_KEY:
-        API_KEY = "sk-e200005b066942eebc8c5426df92a6d5"
-        logging.warning("DASHSCOPE_API_KEY not found in session state or environment variables. Using hardcoded fallback key.")
-        
-    if not API_KEY:
         return None, "API Key not found. Please set the DASHSCOPE_API_KEY environment variable or provide it in the session state."
     
     try:
