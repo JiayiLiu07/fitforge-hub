@@ -19,25 +19,84 @@ logging.basicConfig(
     ]
 )
 
-# ---------- 0. Initialize client for Aliyun ----------
-API_KEY = "your-api-key"
-client = OpenAI(api_key=API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+st.markdown("""
+<style>
+    .main { background-color: #f9fafb; padding: 2rem; }
+    .stButton>button {
+        background-color: #3b82f6;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
+        border: none;
+        font-weight: 600;
+        transition: background-color 0.2s;
+    }
+</style> 
+""", unsafe_allow_html=True)
+
+# Initialize session state for history and summary
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "summary" not in st.session_state:
+    st.session_state.summary = ""
+
+# Check for API Key from main page
+if not st.session_state.get("api_key"):
+    st.markdown(
+        """
+        <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
+            🗣️ Obesity Data Explorer
+        </h1>
+        <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
+         Use LLM to convert natural language into SQL, and then use PySpark to calculate obesity data and plot it in seconds！ 📈 Data: <i>obesity_level_attribute.csv</i> + <i>obesity_level_result.csv</i>
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+    st.warning("⚠️ Please go to the sidebar and enter a valid API key in FitForge_Hub🚀 page")
+    st.stop()
+
+# Initialize OpenAI client for Aliyun
+def initialize_client(api_key):
+    return OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+try:
+    client = initialize_client(st.session_state["api_key"])
+except Exception as e:
+    st.error(f"🚨 Failed to initialize OpenAI client: {e}")
+    logging.error(f"OpenAI client initialization failed: {e}")
+    st.stop()
 
 # ---------- 1. Initialize Spark ----------
 master = "local[*]"
 app_name = "llm_demo"
 @st.cache_resource
 def get_spark():
-    spark_conf = SparkConf().setMaster(master).setAppName(app_name)
-    return SparkSession.builder.config(conf=spark_conf).getOrCreate()
-spark = get_spark()
+    try:
+        spark_conf = SparkConf().setMaster(master).setAppName(app_name)
+        return SparkSession.builder.config(conf=spark_conf).getOrCreate()
+    except Exception as e:
+        logging.error(f"Spark initialization failed: {e}")
+        raise
+
+try:
+    spark = get_spark()
+except Exception as e:
+    st.error(f"🚨 Failed to initialize Spark: {e}")
+    st.stop()
 
 # ---------- 2. Load data ----------
 base_path = "data"
 attribute_path = os.path.join(base_path, "obesity_level_attribute_clean.csv")
 result_path = os.path.join(base_path, "obesity_level_result_clean.csv")
-attr_df = spark.read.csv(attribute_path, header=True, inferSchema=True)
-result_df = spark.read.csv(result_path, header=True, inferSchema=True)
+
+try:
+    attr_df = spark.read.csv(attribute_path, header=True, inferSchema=True)
+    result_df = spark.read.csv(result_path, header=True, inferSchema=True)
+except Exception as e:
+    st.error(f"🚨 Failed to load data files: {e}")
+    logging.error(f"Data loading failed: {e}")
+    st.stop()
 
 attr_df.createOrReplaceTempView("attribute")
 result_df.createOrReplaceTempView("result")
@@ -56,15 +115,10 @@ level_map = {
 @udf(returnType=IntegerType())
 def level_to_num(level):
     return level_map.get(level, None)
+
 spark.udf.register("level_to_num", level_to_num)
 result_df = result_df.withColumn("level_num", level_to_num(col("obesity_level")))
 result_df.createOrReplaceTempView("result")
-
-# Initialize session state
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "summary" not in st.session_state:
-    st.session_state.summary = ""
 
 # ---------- 3. Build Prompt ----------
 PROMPT_TEMPLATE = """
@@ -131,23 +185,35 @@ def nl_to_sql_and_plot(question: str):
     logging.info(f"Sending prompt to LLM:\n{full_prompt}")
 
     messages = [{"role": "user", "content": full_prompt}]
-    resp = client.chat.completions.create(
-        model="qwen-plus",
-        messages=messages,
-        temperature=0
-    )
-    text = resp.choices[0].message.content
+    try:
+        resp = client.chat.completions.create(
+            model="qwen-plus",
+            messages=messages,
+            temperature=0
+        )
+        text = resp.choices[0].message.content
+    except Exception as e:
+        logging.error(f"LLM API call failed: {e}")
+        raise
 
     logging.info(f"LLM response:\n{text}")
 
-    sql_block = re.findall(r"```sql\n(.*?)\n```", text, re.S)[0].strip()
-    plot_block = re.findall(r"```python\n(.*?)\n```", text, re.S)[0].strip()
+    try:
+        sql_block = re.findall(r"```sql\n(.*?)\n```", text, re.S)[0].strip()
+        plot_block = re.findall(r"```python\n(.*?)\n```", text, re.S)[0].strip()
+    except IndexError:
+        logging.error("Failed to extract SQL or Plotly code from LLM response")
+        raise ValueError("Invalid LLM response format")
 
     return sql_block, plot_block, text
 
 # ---------- 5. Execute query and generate plot ----------
 def run_and_plot(question: str):
-    sql, plot_code, answer = nl_to_sql_and_plot(question)
+    try:
+        sql, plot_code, answer = nl_to_sql_and_plot(question)
+    except Exception as e:
+        st.error(f"🚨 API Key validation or LLM call failed: {e}")
+        return None, None, None
     
     logging.info("=========== Code ===========")
     logging.info(f"Generated SQL query:\n{sql}")
@@ -173,12 +239,15 @@ def run_and_plot(question: str):
     New answer: {answer}
     Please summarize the above conversation into a concise summary, within 100 words.
     """
-    summary_resp = client.chat.completions.create(
-        model="qwen-plus",
-        messages=[{"role": "user", "content": summary_prompt}],
-        temperature=0
-    )
-    st.session_state.summary = summary_resp.choices[0].message.content.strip()
+    try:
+        summary_resp = client.chat.completions.create(
+            model="qwen-plus",
+            messages=[{"role": "user", "content": summary_prompt}],
+            temperature=0
+        )
+        st.session_state.summary = summary_resp.choices[0].message.content.strip()
+    except Exception as e:
+        st.error(f"🚨 Summary generation failed: {e}")
 
     # Save to history
     st.session_state.history.append((question, answer))
@@ -186,9 +255,9 @@ def run_and_plot(question: str):
     return sql, df, loc["fig"]
 
 # ---------- 6. Streamlit UI ----------
-st.set_page_config(page_title="NL2SQL Demo", layout="wide")
-st.title("🗣️ LLM + PySpark NL2SQL Demo ")
-st.markdown("Explore obesity data with natural language queries! 📈 Data: *obesity_level_attribute.csv* + *obesity_level_result.csv*")
+st.set_page_config(page_title="Obesity Data Explorer", layout="wide")
+st.title("🗣️ Obesity Data Explorer")
+st.markdown("Use LLM to convert natural language into SQL, and then use PySpark to calculate obesity data and plot it in seconds! 📈 Data: *obesity_level_attribute.csv* + *obesity_level_result.csv*")
 
 # Sidebar for history
 with st.sidebar:
@@ -204,12 +273,12 @@ with st.sidebar:
                 st.markdown(f"**Question:** {q}")
                 st.markdown(f"**Answer:** {a}")
     else:
-        st.info("No queries yet. Start asking!🥳")
+        st.info("No queries yet. Start asking! 🥳")
 
 # Main query input with examples
-st.subheader("🔍Ask Your Question")
+st.subheader("🔍 Ask Your Question")
 question = st.text_input(
-    "💬Describe your custom query:",
+    "💬 Describe your custom query:",
     value="",
     placeholder="e.g., Show obesity levels by gender"
 )
@@ -221,7 +290,7 @@ example_queries = [
     "Create a histogram of BMI (Weight/Height^2) by gender",
     "Show a box plot of water consumption (CH2O) across obesity levels"
 ]
-selected_query = st.selectbox("💡Choose an example or type your own:", example_queries)
+selected_query = st.selectbox("💡 Choose an example or type your own:", example_queries)
 
 if st.button("Run Query 🚀"):
     query_to_run = selected_query if selected_query != "Select an example query..." and question == "" else question
@@ -229,12 +298,12 @@ if st.button("Run Query 🚀"):
         st.error("Please enter a query or select an example! 😔")
     else:
         with st.spinner("Processing your query..."):
-            sql, pdf, fig = run_and_plot(query_to_run)
-            if sql and pdf is not None and fig is not None:
+            sql, df, fig = run_and_plot(query_to_run)
+            if sql and df is not None and fig is not None:
                 st.subheader("Results")
                 st.code(sql, language="sql")
                 st.subheader("Data Preview")
-                st.dataframe(pdf)
+                st.dataframe(df)
                 st.subheader("Visualization")
                 st.plotly_chart(fig, use_container_width=True)
                 st.success("Query executed successfully! 🎉")

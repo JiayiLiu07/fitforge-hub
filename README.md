@@ -1,6 +1,6 @@
 # FitForge Hub: An AI-Driven Comprehensive Wellness Platform 🚀
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.48+-FF4B4B.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
@@ -52,7 +52,7 @@ cd big_data_project/feature/0002-FitForge_Hub
 ```
 
 2. **Set Up Python Environment**:
-   - Ensure Python 3.8 or higher is installed:
+   - Ensure Python 3.9 or higher is installed:
      ```bash
      python --version
      ```
@@ -83,6 +83,7 @@ pip install -r requirements.txt
 ## Running Instructions 🚀
 
 Launch the Streamlit application:
+`[Make sure you are using streamlit in the virtual environment]`
 ```bash
 streamlit run "FitForge Hub🚀.py"
 ```
@@ -108,6 +109,7 @@ pyspark==4.0.0
 scikit-learn==1.7.1
 xgboost==3.1.0
 ```
+- If running locally, you need to configure the spark environment locally
 
 ### Dependency Version Verification
 - List installed package versions:
@@ -118,26 +120,13 @@ xgboost==3.1.0
   ```bash
   pip freeze > requirements.txt
   ```
-- Check Python version (3.8 or higher recommended):
+- Check Python version (3.9 or higher recommended):
   ```bash
   python --version
   ```
 
 **Note**: Dependency versions may require adjustment based on your environment. Verify the latest versions on PyPI (https://pypi.org/).
 
-## Running Test Suite Instructions 🧪
-
-The current project does not include an automated test suite. To add tests in the future:
-- Use the `pytest` framework to write unit tests for data processing, model predictions, and visualization outputs.
-- Install `pytest`:
-  ```bash
-  pip install pytest
-  ```
-- Create a `tests` folder with test scripts (e.g., `test_nl2sql.py`) and run:
-  ```bash
-  pytest tests/
-  ```
-Recommended tests include validating data inputs, API calls, and visualization outputs.
 
 ## Known Issues ⚠️
 
