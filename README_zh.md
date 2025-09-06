@@ -86,7 +86,7 @@ pip install -r requirements.txt
 `【请确保你使用的是虚拟环境中的streamlit】`
 
 ```bash
-streamlit run "FitForge Hub🚀.py"
+streamlit run "FitForge Hub.py"
 ```
 
 - **用户登记**：在主界面输入个人信息（如年龄、性别、体重、身高）及健康目标。
