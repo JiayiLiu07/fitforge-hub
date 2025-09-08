@@ -1,9 +1,39 @@
-streamlit==1.48.0
-pandas==2.2.3
-plotly==6.3.0
-scikit-learn==1.6.1
-joblib==1.5.1
-openai==1.99.9
-pyspark==4.0.0
-numpy==2.2.6
-xgboost==3.0.4
+# requirements.txt 
+
+# ---------- Core Web Framework ----------
+streamlit==1.48.0          # main low-code UI framework
+streamlit-autorefresh==1.0.1
+streamlit-option-menu==0.4.0
+
+# ---------- LLM / AI ----------
+openai==1.99.9             # OpenAI-compatible API (Alibaba Cloud Qwen)
+tenacity==9.1.2            # retry decorator for robust LLM calls
+
+# ---------- Data & Analytics ----------
+pandas==2.2.3              # tabular data wrangling
+pandasql==0.7.3            # natural-language → SQL (Pandas engine)
+pyspark==4.0.0             # distributed SQL engine (Spark ≥ 4.x)
+numpy==2.2.6               # numerical arrays / math
+scipy==1.15.3              # scientific utilities
+scikit-learn==1.6.1        # obesity-level XGBoost model
+xgboost==3.0.4             # gradient-boosting backend
+joblib==1.5.1              # model serialization
+
+# ---------- Visualisation ----------
+plotly==6.3.0              # interactive charts (bar, line, 3-D, etc.)
+altair==5.5.0              # declarative grammar for extra charts
+matplotlib==3.10.3         # fallback / radar charts
+seaborn==0.13.2            # statistical plot helpers
+pydeck==0.9.1              # (optional) map/geo layers
+
+# ---------- Utilities ----------
+requests==2.32.4           # validate image URLs & external calls
+python-dotenv==1.1.1       # load .env (API keys)
+pytz==2025.2               # timezone handling
+python-dateutil==2.9.0.post0
+jsonschema==4.25.0         # optional JSON validation
+pdfkit==1.0.0              # (optional) PDF export
+
+# ---------- Development / Logging ----------
+logging                    # built-in (no pip needed)
+tqdm==4.67.1               # progress bars for long jobs
