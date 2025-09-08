@@ -87,7 +87,7 @@ pip install -r requirements.txt
 Launch the Streamlit application:
 `[Make sure you are using streamlit in the virtual environment]`
 ```bash
-streamlit run "FitForge Hub🚀.py"
+streamlit run "FitForge Hub.py"
 ```
 
 - **User Check-In**: Enter personal details (e.g., age, sex, weight, height) and health goals on the main interface.
