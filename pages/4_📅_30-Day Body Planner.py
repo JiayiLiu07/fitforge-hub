@@ -4,6 +4,17 @@ import numpy as np
 import altair as alt
 import joblib
 import json
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # ---------- 0. Page Config ----------
 st.set_page_config(
@@ -28,9 +39,11 @@ def load_model_and_encoder():
         return loaded["model"], loaded["le"]
     except FileNotFoundError:
         st.error(f"Error: Model file not found at {MODEL_PATH}. Please ensure the model is saved correctly.")
+        logging.error(f"Model file not found: {MODEL_PATH}")
         st.stop()
     except Exception as e:
         st.error(f"Error loading model: {e}")
+        logging.error(f"Model loading failed: {e}")
         st.stop()
 
 model, le = load_model_and_encoder()
@@ -201,7 +214,7 @@ with st.sidebar:
         current_family = st.session_state.get("family_history_with_overweight", "yes")
         family_options = ["yes", "no"]
         if current_family not in family_options: current_family = "yes" # Fallback
-        family = st.selectbox("🧑‍🧑‍သား Family history overweight", family_options, index=family_options.index(current_family))
+        family = st.selectbox("🧑‍🧑‍🧒 Family history of overweight", family_options, index=family_options.index(current_family))
 
         # --- FAVC (Frequent High-Calorie Food) ---
         current_favc = st.session_state.get("favc", "yes")
@@ -224,7 +237,6 @@ with st.sidebar:
             current_caec = str(current_caec_raw).strip()
         else:
             current_caec = "Sometimes" # Default if not found or invalid
-
         caec_options = ["Always", "Frequently", "Sometimes"]
         if current_caec not in caec_options: # Ensure value exists in options, otherwise use default
             current_caec = "Sometimes"
@@ -262,7 +274,6 @@ with st.sidebar:
             current_calc = str(current_calc_raw).strip()
         else:
             current_calc = "No" # Default if not found or invalid
-
         calc_options = ["No", "Sometimes", "Frequently"]
         if current_calc not in calc_options: # Ensure value exists in options, otherwise use default
             current_calc = "No"
@@ -275,11 +286,9 @@ with st.sidebar:
             current_mtrans = str(current_mtrans_raw).strip()
         else:
             current_mtrans = "Public" # Default if not found or invalid
-
         # Handle the old value 'Public_Transportation' if it exists in session state
         if current_mtrans == "Public_Transportation":
             current_mtrans = "Public"
-
         mtrans_options = ["Walking", "Bike", "Public", "Car", "Motorbike"]
         if current_mtrans not in mtrans_options: # Ensure value exists in options, otherwise use default
             current_mtrans = "Public"
@@ -331,6 +340,10 @@ with st.sidebar:
         })
         st.rerun() # Rerun the app to reflect changes in the main content
 
+# ---------- Initialize selected_scenarios ----------
+if "selected_scenarios" not in st.session_state:
+    st.session_state["selected_scenarios"] = ["Baseline"]
+    logging.info("Initialized selected_scenarios with ['Baseline']")
 
 # ---------- Build base_df AFTER sidebar widgets to ensure latest session state values are used ----------
 base_df = pd.DataFrame([{
@@ -353,7 +366,7 @@ base_df = pd.DataFrame([{
 }])[feature_order] # Ensure columns are in the correct order for the model
 
 # ---------- Lifestyle Tweaks Section ----------
-st.subheader(" tweak Your Habits") # Added descriptive subheader
+st.subheader("Tweak Your Habits")
 with st.container():
     col1, col2 = st.columns(2)
     with col1:
@@ -390,6 +403,44 @@ delta = {
 # ---------- Scenario Manager ----------
 st.subheader("💾 Scenario Manager")
 
+def handle_save():
+    """Callback to handle saving a new scenario."""
+    if new_name.strip():
+        st.session_state.setdefault("scenarios", {})[new_name.strip()] = delta
+        current_selected = st.session_state.get("selected_scenarios", ["Baseline"])
+        if new_name.strip() not in current_selected:
+            current_selected.append(new_name.strip())
+            st.session_state["selected_scenarios"] = current_selected
+        logging.info(f"Saved scenario: {new_name.strip()}, selected_scenarios: {current_selected}")
+        st.success(f"Scenario '{new_name.strip()}' saved!")
+        st.session_state["update_trigger"] = np.random.rand()  # Force update
+    else:
+        st.warning("Please enter a name for the scenario before saving.")
+
+def handle_delete():
+    """Callback to handle deleting a scenario."""
+    if to_del:
+        st.session_state["scenarios"].pop(to_del)
+        current_selected = st.session_state.get("selected_scenarios", ["Baseline"])
+        if to_del in current_selected:
+            current_selected.remove(to_del)
+            st.session_state["selected_scenarios"] = current_selected
+        logging.info(f"Deleted scenario: {to_del}, selected_scenarios: {current_selected}")
+        st.success(f"Scenario '{to_del}' deleted!")
+        st.session_state["update_trigger"] = np.random.rand()  # Force update
+
+def handle_clear_all():
+    """Callback to handle clearing all scenarios."""
+    st.session_state["scenarios"] = {}
+    st.session_state["selected_scenarios"] = ["Baseline"]
+    logging.info("Cleared all scenarios, selected_scenarios: ['Baseline']")
+    st.success("All scenarios cleared!")
+    st.session_state["update_trigger"] = np.random.rand()  # Force update
+
+# Initialize update_trigger if not present
+if "update_trigger" not in st.session_state:
+    st.session_state["update_trigger"] = np.random.rand()
+
 save_col1, save_col2 = st.columns([3, 1])
 with save_col1:
     new_name = st.text_input(
@@ -398,21 +449,14 @@ with save_col1:
         label_visibility="collapsed"
     )
 with save_col2:
-    if st.button("💾 Save", type="primary", use_container_width=True):
-        if new_name.strip(): # Ensure a name is provided
-            # Store the current delta settings under the new scenario name
-            st.session_state.setdefault("scenarios", {})[new_name.strip()] = delta
-            st.rerun() # Rerun to update the UI (e.g., show the new scenario in delete list)
-        else:
-            st.warning("Please enter a name for the scenario before saving.")
+    st.button("💾 Save", type="primary", use_container_width=True, on_click=handle_save)
 
 # Display existing scenarios and provide delete functionality
 if st.session_state.get("scenarios"):
     del_col1, del_col2 = st.columns([3, 1])
     with del_col1:
-        # Get the list of current scenario names to populate the selectbox
         scenario_names = list(st.session_state["scenarios"].keys())
-        if scenario_names: # Only show selectbox if there are scenarios to delete
+        if scenario_names:
             to_del = st.selectbox(
                 "Choose scenario to delete",
                 scenario_names,
@@ -420,19 +464,14 @@ if st.session_state.get("scenarios"):
             )
         else:
             st.info("No scenarios saved yet.")
-            to_del = None # Ensure to_del is None if no scenarios exist
-
+            to_del = None
     with del_col2:
-        if scenario_names and st.button("🗑️ Delete", use_container_width=True): # Only enable if there are scenarios
-            if to_del:
-                st.session_state["scenarios"].pop(to_del)
-                st.rerun() # Rerun to update UI
+        if scenario_names:
+            st.button("🗑️ Delete", use_container_width=True, on_click=handle_delete)
 
 # Button to clear all saved scenarios
-if st.session_state.get("scenarios"): # Only show if there are scenarios
-    if st.button("⚠️ Clear ALL scenarios", use_container_width=True):
-        st.session_state["scenarios"] = {} # Reset the scenarios dictionary
-        st.rerun() # Rerun to update UI
+if st.session_state.get("scenarios"):
+    st.button("⚠️ Clear ALL scenarios", use_container_width=True, on_click=handle_clear_all)
 
 # ---------- 30-Day Weight Projection ----------
 st.header("📈 30-Day Weight Projection")
@@ -472,10 +511,18 @@ df_plot = pd.DataFrame(plot_data).melt("Day", var_name="Scenario", value_name="W
 
 # Multiselect for choosing which scenarios to display
 all_scenarios = ["Baseline"] + list(st.session_state.get("scenarios", {}).keys())
-# Load previously selected scenarios, or default to all if none were selected before
-current_selected_scenarios = st.session_state.get("selected_scenarios", all_scenarios)
-selected = st.multiselect("Choose scenarios to display", all_scenarios, default=current_selected_scenarios)
+# Filter selected to only include existing scenarios
+st.session_state["selected_scenarios"] = [s for s in st.session_state["selected_scenarios"] if s in all_scenarios]
+# Use a dynamic key to force re-rendering of multiselect
+multiselect_key = f"scenario_select_{len(all_scenarios)}_{hash(str(all_scenarios))}_{st.session_state['update_trigger']}"
+selected = st.multiselect(
+    "Choose scenarios to display",
+    all_scenarios,
+    default=st.session_state["selected_scenarios"].copy(),  # Use copy to avoid modifying default
+    key=multiselect_key
+)
 st.session_state["selected_scenarios"] = selected # Save selection to session state
+logging.info(f"Selected scenarios updated: {selected}")
 
 # Filter data based on user selection
 df_filtered = df_plot[df_plot["Scenario"].isin(selected)]
@@ -560,6 +607,7 @@ try:
         st.warning("Cannot predict obesity level: Baseline data is missing or invalid.")
 except Exception as e:
     st.error(f"Error during obesity level prediction: {e}")
+    logging.error(f"Obesity level prediction failed: {e}")
 
 # ---------- Backup & Restore Functionality ----------
 st.subheader("💾 Backup & Restore Your Scenarios")
@@ -578,6 +626,7 @@ if st.session_state.get("scenarios"): # Only show if there are scenarios to expo
         )
     except Exception as e:
         st.error(f"Error during scenario export: {e}")
+        logging.error(f"Scenario export failed: {e}")
 
 # Import File Uploader
 uploaded = st.file_uploader("📤 Import Scenarios (JSON)", type=["json"])
@@ -591,13 +640,20 @@ if uploaded:
         if isinstance(imported, dict):
             # Optional: Add more robust validation for the structure of scenarios if needed
             st.session_state["scenarios"] = imported # Replace current scenarios with imported ones
+            # Automatically select all imported scenarios for display
+            st.session_state["selected_scenarios"] = ["Baseline"] + list(imported.keys())
             st.success("✅ Scenarios imported successfully!")
-            st.rerun() # Rerun to update the UI (e.g., show new scenarios, update delete list)
+            logging.info("Imported scenarios successfully, selected_scenarios: {}".format(st.session_state["selected_scenarios"]))
+            st.session_state["update_trigger"] = np.random.rand()  # Force update
         else:
             st.error("❌ Invalid JSON format. Expected a dictionary of scenarios.")
+            logging.error("Invalid JSON format during import")
     except json.JSONDecodeError:
         st.error("❌ Failed to parse JSON. Please ensure the file is a valid JSON document.")
+        logging.error("JSON parsing failed during import")
     except UnicodeDecodeError:
         st.error("❌ Failed to decode file content. Please ensure the file is UTF-8 encoded.")
+        logging.error("Unicode decode error during import")
     except Exception as e:
         st.error(f"❌ An unexpected error occurred during import: {e}")
+        logging.error(f"Unexpected error during import: {e}")

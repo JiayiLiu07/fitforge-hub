@@ -45,10 +45,10 @@ if not st.session_state.get("api_key"):
     st.markdown(
         """
         <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
-            🗣️ Obesity Data Explorer
+            🗣️ Pyspark Obesity Data Explorer
         </h1>
         <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
-         Use LLM to convert natural language into SQL, and then use PySpark to calculate obesity data and plot it in seconds！ 📈 Data: <i>obesity_level_attribute.csv</i> + <i>obesity_level_result.csv</i>
+         Use LLM to convert natural language into SQL, and then use PySpark to calculate obesity data and plot it in seconds！ <br>📈 Data: <i>obesity_level_attribute.csv</i> + <i>obesity_level_result.csv</i>
         </p>
         """,
         unsafe_allow_html=True
@@ -256,7 +256,7 @@ def run_and_plot(question: str):
 
 # ---------- 6. Streamlit UI ----------
 st.set_page_config(page_title="Obesity Data Explorer", layout="wide")
-st.title("🗣️ Obesity Data Explorer")
+st.title("🗣️ Pyspark Obesity Data Explorer")
 st.markdown("Use LLM to convert natural language into SQL, and then use PySpark to calculate obesity data and plot it in seconds! 📈 Data: *obesity_level_attribute.csv* + *obesity_level_result.csv*")
 
 # Sidebar for history

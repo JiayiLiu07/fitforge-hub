@@ -222,7 +222,7 @@ with st.form("user_input_form"):
 
 # Display success message if triggered
 if st.session_state.get("success_message_trigger", False):
-    st.markdown('<div class="success-message">🎊 Personal information saved successfully!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="success-message">Personal information saved successfully!</div>', unsafe_allow_html=True)
     st.session_state.success_message_trigger = False
 
 # ---------- Strategic Overview ----------
