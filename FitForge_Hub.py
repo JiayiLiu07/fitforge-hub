@@ -241,26 +241,26 @@ if all(st.session_state.get(k) is not None for k in ["goal", "desired_weight", "
     col3.metric("Projected BMI", f"{proj_bmi:.1f}")
 
 # ---------- Navigation Buttons ----------
-    st.write("Next Steps:")
+st.write("Next Steps:")
+actions = [
+    ("👋 Pandas Obesity Data Analyzer", "pages/1_👋_Pandas_Obesity_Data_Analyzer.py", "LLM-powered natural-language → SQL + instant Plotly charts."),
+    ("🗣️ PySpark Obesity Data Explorer", "pages/1_🗣️_PySpark_Obesity_Data_Explorer.py", "Ask in plain English, get clean SQL, live tables & interactive charts."),
+    ("🔮 Obesity Level Prediction", "pages/2_🔮_Obesity Level Prediction.py", "Real-time obesity-risk score + personalized tips from your habits."),
+    ("🥗 7-Day Smart Meal Planner", "pages/3_🥗_7-Day Smart Meal Planner.py", "AI dietitian → 7-day meals + nutrition charts + auto shopping list."),
+    ("📅 30-Day Body Planner", "pages/4_📅_30-Day Body Planner.py", "Dynamic BMI forecast & 30-day weight-change line chart."),
+    ("🧠 Holistic Wellness Planner", "pages/5_🧠_Holistic_Wellness_Planner.py", "LLM wellness analytics with trackable, visual health programs.")
+]
+
+for r in range(0, len(actions), 2):
     cols = st.columns(2)
-    actions = [
-        ("🗣️ Obesity Data Explorer", "pages/1_🗣️_Obesity_Data_Explorer.py",
-         "Query datasets using natural language and instantly see clean SQL, live tables and interactive charts—no coding needed."),
-        ("🔮 Obesity Level Prediction", "pages/2_🔮_Obesity Level Prediction.py",
-         "Enter your daily habits—sleep, activity, diet, stress—and instantly receive a real-time obesity-risk score plus personalized tips to lower it."),
-        ("🥗 7-Day Smart Meal Planner", "pages/3_🥗_7-Day Smart Meal Planner.py",
-         "Intelligently generates and dynamically adjusts your personalized nutritious meal plan for the next 7 days."),
-        ("📅 30-Day Body Planner", "pages/4_📅_30-Day Body Planner.py",
-         "Calculates your new BMI in real time and provides a line chart showing your projected 30-day weight change.")
-    ]
-
-    for i, (label, page, note) in enumerate(actions):
-        col = cols[i % 2]
-        with col:
-            if st.button(label, key=label, use_container_width=True):
-                st.switch_page(page)
-            st.caption(note)
-
+    for c in range(2):
+        idx = r + c
+        if idx < len(actions):
+            label, page, note = actions[idx]
+            with cols[c]:
+                if st.button(label, key=f"nav_btn_{idx}", use_container_width=True):
+                    st.switch_page(page)
+                st.caption(note)
 
 
 
