@@ -98,7 +98,7 @@ TIPS = {
 }
 
 # --- GLOBAL PLACEHOLDER TEXT ---
-AI_PLACEHOLDER_TEXT = "Content currently unavailable."
+AI_PLACEHOLDER_TEXT = "Content currently unavailable. Please try regenerating or consult your plan."
 
 # --- Session State Initialization ---
 def initialize_session_state():
@@ -337,8 +337,8 @@ with st.sidebar:
         st.session_state.last_tip_switch_time = time.time()
         tip_slot.info(current_tips_list[st.session_state.tip_idx])
 
-# Check for API Key
-if not st.session_state.api_key:
+# Check for API Key at the very beginning of execution
+if "api_key"  not in st.session_state or not st.session_state.api_key:
     st.markdown(
         """
         <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
@@ -350,23 +350,27 @@ if not st.session_state.api_key:
         """,
         unsafe_allow_html=True
     )
-    st.warning("⚠️ Please enter a valid API key in the FitForge_Hub🚀 page sidebar")
+    st.warning("⚠️ Please enter a valid API key in the FitForge_Hub🚀 page sidebar to continue.")
     st.stop()
 
 # Initialize OpenAI client
 def initialize_client(api_key):
     try:
-        # Use the correct base URL for Alibaba Cloud's Qwen models
         client = OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
         return client
     except Exception as e:
         logging.error(f"Failed to initialize OpenAI client: {e}")
-        st.error(f"🚨 Failed to initialize OpenAI client: {e}")
+        st.error(f"🚨 Failed to initialize OpenAI client. Please check your API key and network connection. Error: {e}")
         return None
 
-client = initialize_client(st.session_state["api_key"])
-if not client:
-    st.stop()
+# Ensure client is initialized if api_key is present
+if st.session_state.api_key:
+    client = initialize_client(st.session_state["api_key"])
+    if not client:
+        st.stop() # Stop execution if client initialization fails
+else:
+    if "api_key" not in st.session_state or not st.session_state.api_key:
+        st.stop()
 
 # Helper functions
 def safe_int(value, default=0):
@@ -381,12 +385,10 @@ def clean_and_translate_to_english(text):
     if not isinstance(text, str):
         return ""
     try:
-        # Attempt to encode and decode to handle potential Unicode issues more robustly
         text = text.encode('utf-8', 'ignore').decode('utf-8')
     except Exception as e:
         logging.warning(f"Encoding/decoding issue in clean_and_translate: {e}")
     
-    # Remove emojis
     emoji_pattern = re.compile(
         "["
         "\U0001F600-\U0001F64F"  # emoticons
@@ -403,13 +405,11 @@ def clean_and_translate_to_english(text):
     )
     cleaned_text = emoji_pattern.sub('', text)
     
-    # Remove non-alphanumeric characters except common punctuation, then clean whitespace
-    # This regex keeps letters, numbers, spaces, and a few specific punctuation marks.
-    # Adjust the allowed characters within the square brackets if more are needed.
+    # Remove any characters that are not basic Latin letters, numbers, or common punctuation
     cleaned_text = re.sub(r'[^\w\s\'".,!?;:-]', '', cleaned_text)
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
     
-    # Check if any alphanumeric characters remain after cleaning. If not, return empty.
+    # Ensure there's at least one alphanumeric character to avoid returning empty strings from pure punctuation/whitespace
     if not re.search(r'[a-zA-Z0-9]', cleaned_text):
         return ""
         
@@ -432,51 +432,33 @@ def get_random_emoji(task_type, goal):
     return "✨"
 
 def get_default_tip_for_goal(goal, task_type, excluded_indices=None):
-    """
-    Selects a random tip for a given goal and task type, avoiding previously used indices.
-    Returns a tuple: (tip_text, index_used).
-    """
     if excluded_indices is None:
         excluded_indices = set()
     
-    tips_for_category = TIPS.get(goal, TIPS["Reduce Stress"]) # Fallback to Reduce Stress if goal not found
-    
+    tips_for_category = TIPS.get(goal, TIPS["Reduce Stress"])
     available_indices = [i for i, tip in enumerate(tips_for_category) if i not in excluded_indices]
     
-    if not available_indices: # If all tips have been used, reset excluded_indices for this category and pick one
+    if not available_indices:
         logging.warning(f"All tips for goal '{goal}' have been used. Resetting and picking again.")
         available_indices = list(range(len(tips_for_category)))
-        # Consider clearing st.session_state.used_default_tip_indices here for the specific category
-        # to allow true randomization across multiple calls if needed.
-        # For now, it will just pick the first available in the reset list.
-
-    if not available_indices: # Still no tips? (Should not happen with TIPS dict)
+    
+    if not available_indices:
         return f"No specific default tip found for your goal: {goal}.", -1
 
     chosen_index = random.choice(available_indices)
     return tips_for_category[chosen_index], chosen_index
 
 def get_personalized_default_content(task_type, goal, user_data, is_full_fallback=False):
-    """
-    Generates personalized default content based on TIPS and user_data when AI fails.
-    Ensures all fields are populated and meet length requirements.
-    `is_full_fallback`: If True, prepends '[DEFAULT] ' to titles for clear distinction.
-    """
     prefix = "[DEFAULT] " if is_full_fallback else ""
     
-    # --- Determine appropriate title prefix based on task type and fallback status ---
     if task_type == "stress_task":
         base_title_part = "Stress Management Task"
     elif task_type == "habit_task":
-        base_title_part = f"{goal} Habit Task" # Make habit title more specific to goal
+        base_title_part = f"{goal} Habit Task"
     else:
         base_title_part = "Wellness Task"
     
-    # Add "[DEFAULT]" prefix if it's a full fallback
-    if is_full_fallback:
-        default_title = f"{prefix}{base_title_part}"
-    else:
-        default_title = base_title_part
+    default_title = f"{prefix}{base_title_part}" if is_full_fallback else base_title_part
 
     default_description = ""
     default_benefit = ""
@@ -484,7 +466,6 @@ def get_personalized_default_content(task_type, goal, user_data, is_full_fallbac
     emoji = get_random_emoji(task_type, goal)
     min_content_chars = 80
 
-    # --- Generate Description (using TIPS as a source) ---
     if task_type == "stress_task":
         tip_text, tip_idx_used = get_default_tip_for_goal("Reduce Stress", "stress", st.session_state.used_default_tip_indices["stress"])
         default_description = tip_text
@@ -496,19 +477,16 @@ def get_personalized_default_content(task_type, goal, user_data, is_full_fallbac
         if tip_idx_used != -1:
             st.session_state.used_default_tip_indices["habit"].add(tip_idx_used)
     
-    # Ensure description is not empty if no tip was found, and meets minimum length if not a placeholder.
     if not default_description.strip() or (default_description != AI_PLACEHOLDER_TEXT and len(default_description) < min_content_chars):
-        # Provide a more generic placeholder if the tip is too short or missing.
         if task_type == "stress_task":
             default_description = "Dedicate focused time to this creative or restorative activity to help calm your mind and release daily tension. Engage fully in the process for maximum benefit." if len(default_description) < min_content_chars else default_description
         else: # habit_task
             default_description = f"Consistently perform this action to build a strong habit towards your goal of {goal}. Small, regular efforts lead to significant long-term progress." if len(default_description) < min_content_chars else default_description
         if len(default_description) < min_content_chars:
-             default_description = AI_PLACEHOLDER_TEXT # Fallback to placeholder if still too short
+             default_description = AI_PLACEHOLDER_TEXT
 
-    # --- Generate Benefit ---
     if task_type == "stress_task":
-        default_benefit = f"Engaging in this stress management activity enhances your ability to cope with daily challenges, promoting emotional resilience and a sense of calm. It supports mental clarity and reduces the physiological effects of stress."
+        default_benefit = "Engaging in this stress management activity enhances your ability to cope with daily challenges, promoting emotional resilience and a sense of calm. It supports mental clarity and reduces the physiological effects of stress."
     elif task_type == "habit_task":
         if goal == "Increase Water Intake":
             default_benefit = "Staying hydrated is crucial for maintaining energy levels, supporting cognitive function, regulating body temperature, and aiding digestion. This habit contributes to overall physical health and well-being."
@@ -524,7 +502,6 @@ def get_personalized_default_content(task_type, goal, user_data, is_full_fallbac
     if len(default_benefit) < min_content_chars:
         default_benefit = AI_PLACEHOLDER_TEXT
 
-    # --- Generate Pro Tip ---
     if task_type == "stress_task":
         default_tip = "Integrate this activity into your daily or weekly routine. Even short, consistent practice can yield significant benefits for stress reduction and mental well-being. Find a time when you can be uninterrupted."
     elif task_type == "habit_task":
@@ -551,28 +528,19 @@ def get_personalized_default_content(task_type, goal, user_data, is_full_fallbac
     }
 
 def format_task_section(title, description, benefit, tip, emoji_char, is_ai_generated_valid=True):
-    """
-    Formats a task section.
-    `is_ai_generated_valid`: If False, it means the content is a fallback.
-                             If True, it means the AI provided specific, valid content.
-    """
     html_parts = []
     cleaned_title = clean_and_translate_to_english(title)
-    display_title = cleaned_title if cleaned_title else "Untitled Task"
     
-    # For fallback content, the title will already have "[DEFAULT]" from get_personalized_default_content
-    # We use the provided emoji_char for the section header, and the generated emoji_char for the task itself.
-
-    # Ensure descriptions are displayed correctly, using placeholder if truly unavailable
     display_description = description if description and description.strip() and description != AI_PLACEHOLDER_TEXT else AI_PLACEHOLDER_TEXT
     display_benefit = benefit if benefit and benefit.strip() and benefit != AI_PLACEHOLDER_TEXT else AI_PLACEHOLDER_TEXT
     display_tip = tip if tip and tip.strip() and tip != AI_PLACEHOLDER_TEXT else AI_PLACEHOLDER_TEXT
     
-    # Determine the title to display
-    final_display_title = f" {display_title}" if not title.startswith("[DEFAULT]") else display_title
+    final_display_title = f"{emoji_char} {cleaned_title}" if not title.startswith("[DEFAULT]") and cleaned_title else cleaned_title
+    
+    if title.startswith("[DEFAULT]"):
+        final_display_title = f"{emoji_char} {title}" if emoji_char else title
 
-    # Use the emoji provided to format_task_section for the main task title.
-    html_parts.append(f"<div class='task-title'><strong>{emoji_char} {final_display_title}</strong></div>")
+    html_parts.append(f"<div class='task-title'><strong>{final_display_title}</strong></div>")
     html_parts.append(f"<div class='task-detail'><strong>Description:</strong> {display_description}</div>")
     html_parts.append(f"<div class='task-detail'><strong>Benefit:</strong> {display_benefit}</div>")
     html_parts.append(f"<div class='task-tip'><strong>Pro Tip:</strong> {display_tip}</div>")
@@ -607,10 +575,9 @@ def validate_plan(plan_data, days):
                 if field == 'title':
                     if not val:
                         validation_errors.append(f"{day_key}.{task_type}.{field} is empty.")
-                    elif not (1 <= len(val.split()) <= 15): # Title word count constraint
+                    elif not (1 <= len(val.split()) <= 15):
                         validation_errors.append(f"{day_key}.{task_type}.{field} has incorrect word count ({len(val.split())}). Value: '{val}'")
                 elif field in ['description', 'benefit', 'pro_tips']:
-                    # Allow AI_PLACEHOLDER_TEXT to be short, but other content must meet length.
                     if val != AI_PLACEHOLDER_TEXT and len(val) < min_content_chars:
                         validation_errors.append(f"{day_key}.{task_type}.{field} is too short (less than {min_content_chars} chars). Raw value length: {len(val)}. Raw value: '{val}'")
                     
@@ -623,12 +590,6 @@ def validate_plan(plan_data, days):
     logging.info("Plan data passed hard validation.")
 
 def generate_wellness_plan(local_data):
-    """
-    Generates a wellness plan using OpenAI's API.
-    Includes fallback mechanisms for when AI generation fails,
-    prioritizing personalization using TIPS and user data.
-    Ensures no repetition of tasks within a day or across the plan.
-    """
     try:
         days_str = local_data["Plan_Duration"]
         match = re.search(r'(\d+)\s+Days?', days_str)
@@ -639,78 +600,82 @@ def generate_wellness_plan(local_data):
 
     logging.info(f"Attempting to generate a {days}-day wellness plan.")
     
-    # Resetting session state for used default tips and generated tasks at the start of a new plan generation
     st.session_state.used_default_tip_indices = {"stress": set(), "habit": set()}
-    st.session_state.generated_tasks_per_day = {f"day_{d+1}": {"stress": None, "habit": None} for d in range(days)} # Reset task tracking
-    st.session_state.all_fallback_content_generated = False # Reset flag for new plan generation
+    st.session_state.generated_tasks_per_day = {f"day_{d+1}": {"stress": None, "habit": None} for d in range(days)}
+    st.session_state.all_fallback_content_generated = False
 
-    # Map numerical values for AI prompt
     workload_intensity_map = {"Low": 1, "Moderate": 2, "High": 3}
-    social_support_map = {"Low": 1, "Moderate": 2, "High": 3} # Lower is better for support
+    social_support_map = {"Low": 1, "Moderate": 2, "High": 3}
     stress_level_map = {"Low": 1, "Moderate": 2, "High": 3}
 
+    unified_placeholder = AI_PLACEHOLDER_TEXT
+
     prompt = f"""
-You are a senior wellness copywriter.
+You are a senior wellness copywriter and behavioral science expert.
 Output a {days}-day wellness plan in **strict JSON**.
 Each day **must** contain:
 - stress_task
 - habit_task
 Each task **must** include:
-- title (must be between 1 and 15 words)
-- description (≥80 characters, or "{AI_PLACEHOLDER_TEXT}")
-- benefit (≥80 characters, or "{AI_PLACEHOLDER_TEXT}")
-- pro_tips (≥80 characters, or "{AI_PLACEHOLDER_TEXT}")
+- title (1-15 words)
+- description (≥80 chars, or "{unified_placeholder}")
+- benefit (≥80 chars, or "{unified_placeholder}")
+- pro_tips (≥80 chars, or "{unified_placeholder}")
 
-**User Profile Context**:
-- Workload Intensity: {local_data["Workload_Intensity"]} (mapped to {workload_intensity_map.get(local_data["Workload_Intensity"], 'N/A')})
-- Social Support Level: {local_data["Social_Support"]} (mapped to {social_support_map.get(local_data["Social_Support"], 'N/A')})
-- Relaxation Time (hours/day): {local_data["Relaxation_Time"]:.1f}
-- Mindfulness Practice Frequency (per week): {local_data["Mindfulness_Frequency"]}
-- Sleep Hours: {local_data["Sleep_Hours"]:.1f}
-- Stress Level: {local_data["Stress_Level"]} (mapped to {stress_level_map.get(local_data["Stress_Level"], 'N/A')})
+**User Profile**:
+- Workload: {local_data["Workload_Intensity"]} ({workload_intensity_map.get(local_data["Workload_Intensity"], 'N/A')})
+- Support: {local_data["Social_Support"]} ({social_support_map.get(local_data["Social_Support"], 'N/A')})
+- Relaxation: {local_data["Relaxation_Time"]:.1f} hrs/day
+- Mindfulness: {local_data["Mindfulness_Frequency"]} / week
+- Sleep: {local_data["Sleep_Hours"]:.1f} hrs
+- Stress Level: {local_data["Stress_Level"]} ({stress_level_map.get(local_data["Stress_Level"], 'N/A')})
 - Goal: {local_data["Goal"]}
 
 **Hard Rules**:
-1. Any field < 80 characters that is NOT "{AI_PLACEHOLDER_TEXT}" is considered **a failure** and will immediately trigger a retry.
-2. Title MUST be between 1 and 15 words. If it's not, it's a failure.
-3. Do not return empty strings, null values, or pure emojis for any field.
-4. Prohibit repetitive phrasing within and across tasks and days. Specifically, ensure the titles and core concepts of tasks are distinct for each day.
-5. English only, no Chinese characters.
-6. If you cannot generate specific, high-quality content for description, benefit, or pro_tips, use "{AI_PLACEHOLDER_TEXT}" for that field. However, try to be as specific as possible using the provided user profile context.
-7. Ensure that tasks generated for different days are distinct. If a task is very similar to one from a previous day, create a variation or a completely new task.
-8. The `title` should be a concise summary of the task. The `description` should be more detailed.
+1. Field length < 80 chars (unless it's "{unified_placeholder}") is a failure.
+2. Title: 1-15 words.
+3. No empty strings, nulls, or pure emojis.
+4. Avoid repetitive phrasing across tasks/days. Ensure unique task concepts.
+5. **ALL output MUST be in ENGLISH. No Chinese or mixed languages. Translate and clean if accidental.**
+6. Use "{unified_placeholder}" for high-quality content if needed. Be specific with user context.
+7. Tasks across days must be distinct.
+8. Title: concise summary. Description: detailed.
+9.  Base recommendations on science.
+10. Use correct English grammar and punctuation.
 
 Required structure:
 {{
   "day_1":{{
     "stress_task":{{
-      "title":"...title between 1 and 15 words...",
-      "description":"...≥80 chars or {AI_PLACEHOLDER_TEXT}...",
-      "benefit":"...≥80 chars or {AI_PLACEHOLDER_TEXT}...",
-      "pro_tips":"...≥80 chars or {AI_PLACEHOLDER_TEXT}..."
+      "title":"...",
+      "description":"... (≥80 chars or {unified_placeholder})",
+      "benefit":"... (≥80 chars or {unified_placeholder})",
+      "pro_tips":"... (≥80 chars or {unified_placeholder})"
     }},
     "habit_task":{{
-      "title":"...title between 1 and 15 words...",
-      "description":"...≥80 chars or {AI_PLACEHOLDER_TEXT}...",
-      "benefit":"...≥80 chars or {AI_PLACEHOLDER_TEXT}...",
-      "pro_tips":"...≥80 chars or {AI_PLACEHOLDER_TEXT}..."
+      "title":"...",
+      "description":"... (≥80 chars or {unified_placeholder})",
+      "benefit":"... (≥80 chars or {unified_placeholder})",
+      "pro_tips":"... (≥80 chars or {unified_placeholder})"
     }}
   }},
   ... // up to day_{days}
 }}
 """
-    max_retries = 10
-    initial_temperature = 0.7
+
+    max_retries = 8 # Reduced retries slightly
+    initial_temperature = 0.6 # Lowered initial temperature
+    temp_increment = 0.1 # Reduced temperature increment
     
     for attempt in range(max_retries):
-        current_temperature = initial_temperature + attempt * 0.15
+        current_temperature = initial_temperature + attempt * temp_increment
         logging.info(f"Attempt {attempt + 1}/{max_retries} to generate wellness plan. Temperature: {current_temperature:.2f}")
         start_time = time.time()
 
         try:
             logging.info("Sending prompt to OpenAI API.")
             response = client.chat.completions.create(
-                model="qwen-plus", # Ensure this is the correct model for your API
+                model="qwen-plus", 
                 messages=[{"role": "user", "content": prompt}],
                 temperature=current_temperature
             )
@@ -719,7 +684,6 @@ Required structure:
             logging.info(f"Received raw AI response in {response_time:.2f} seconds.")
             logging.debug(f"Raw AI Response (Attempt {attempt+1}, Temp: {current_temperature:.2f}):\n{raw_json_string}")
 
-            # --- Robust JSON Parsing ---
             start_brace = raw_json_string.find('{')
             end_brace = raw_json_string.rfind('}')
 
@@ -731,47 +695,43 @@ Required structure:
             plan_data = json.loads(json_content)
             logging.info("JSON parsed successfully.")
 
-            # --- Task Repetition Check ---
             generated_stress_titles = set()
             generated_habit_titles = set()
 
             for i in range(1, days + 1):
                 day_key = f"day_{i}"
-                if day_key not in plan_data: # This check is also in validate_plan, but good to have early
+                if day_key not in plan_data:
                     raise ValueError(f"Missing day key: '{day_key}' in parsed JSON.")
                 day_tasks = plan_data[day_key]
                 if not isinstance(day_tasks, dict):
                     raise ValueError(f"Invalid format for {day_key}: expected a dictionary, got {type(day_tasks)}.")
 
-                # Process Stress Task
                 stress_task_data = day_tasks.get("stress_task", {})
                 stress_title = clean_and_translate_to_english(stress_task_data.get("title", "")).lower()
                 if stress_title:
                     if stress_title in generated_stress_titles:
-                        raise ValueError(f"Repetitive stress task title found on Day {i}: '{stress_task_data.get('title', '')}'. Titles must be unique across the entire plan.")
+                        raise ValueError(f"Repetitive stress task title found on Day {i}: '{stress_task_data.get('title', '')}'. Titles must be unique.")
                     generated_stress_titles.add(stress_title)
-                    st.session_state.generated_tasks_per_day[f"day_{i}"]["stress"] = stress_task_data # Store for reference
+                    st.session_state.generated_tasks_per_day[f"day_{i}"]["stress"] = stress_task_data
                 else:
                     logging.warning(f"Missing or empty stress task title on Day {i}.")
                     raise ValueError(f"Missing or empty stress task title on Day {i}.")
 
-                # Process Habit Task
                 habit_task_data = day_tasks.get("habit_task", {})
                 habit_title = clean_and_translate_to_english(habit_task_data.get("title", "")).lower()
                 if habit_title:
                     if habit_title in generated_habit_titles:
-                        raise ValueError(f"Repetitive habit task title found on Day {i}: '{habit_task_data.get('title', '')}'. Titles must be unique across the entire plan.")
+                        raise ValueError(f"Repetitive habit task title found on Day {i}: '{habit_task_data.get('title', '')}'. Titles must be unique.")
                     generated_habit_titles.add(habit_title)
-                    st.session_state.generated_tasks_per_day[f"day_{i}"]["habit"] = habit_task_data # Store for reference
+                    st.session_state.generated_tasks_per_day[f"day_{i}"]["habit"] = habit_task_data
                 else:
                     logging.warning(f"Missing or empty habit task title on Day {i}.")
                     raise ValueError(f"Missing or empty habit task title on Day {i}.")
 
-            # If repetition check passes, proceed to general validation
             validate_plan(plan_data, days)
 
             logging.info("Validation passed. Formatting plan.")
-            st.session_state.raw_plan_json = plan_data # Store raw JSON
+            st.session_state.raw_plan_json = plan_data
 
             st.session_state.progress = {}
             st.session_state.habit_values = {}
@@ -789,28 +749,24 @@ Required structure:
                 stress_task_raw = day_content.get("stress_task", {})
                 habit_task_raw = day_content.get("habit_task", {})
 
-                # --- Determine if AI content is valid and specific ---
-                is_stress_ai_valid = False
-                if (stress_task_raw.get("title", "").strip() and 1 <= len(stress_task_raw.get("title", "").split()) <= 15) and \
-                   (stress_task_raw.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("description", "")) >= 80) and \
-                   (stress_task_raw.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("benefit", "")) >= 80) and \
-                   (stress_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("pro_tips", "")) >= 80):
-                    is_stress_ai_valid = True
+                # Simplified AI validity check for faster rendering
+                is_stress_ai_valid = (
+                    (stress_task_raw.get("title", "").strip() and 1 <= len(stress_task_raw.get("title", "").split()) <= 15) and
+                    (stress_task_raw.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("description", "")) >= 80) and
+                    (stress_task_raw.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("benefit", "")) >= 80) and
+                    (stress_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(stress_task_raw.get("pro_tips", "")) >= 80)
+                )
                 
-                is_habit_ai_valid = False
-                if (habit_task_raw.get("title", "").strip() and 1 <= len(habit_task_raw.get("title", "").split()) <= 15) and \
-                   (habit_task_raw.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("description", "")) >= 80) and \
-                   (habit_task_raw.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("benefit", "")) >= 80) and \
-                   (habit_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("pro_tips", "")) >= 80):
-                    is_habit_ai_valid = True
+                is_habit_ai_valid = (
+                    (habit_task_raw.get("title", "").strip() and 1 <= len(habit_task_raw.get("title", "").split()) <= 15) and
+                    (habit_task_raw.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("description", "")) >= 80) and
+                    (habit_task_raw.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("benefit", "")) >= 80) and
+                    (habit_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(habit_task_raw.get("pro_tips", "")) >= 80)
+                )
 
-                # --- Prepare Stress Task HTML ---
                 stress_task_html = ""
                 if is_stress_ai_valid:
-                    # Use AI's title, prepend '✨' if it's not a default title
-                    # Ensure title is cleaned for display and doesn't contain unwanted characters
                     display_stress_title = clean_and_translate_to_english(stress_task_raw.get('title', 'Stress Management Task'))
-                    # Add ✨ prefix only if it's not a default title generated by fallback
                     if not stress_task_raw.get('title', '').startswith("[DEFAULT]"):
                         display_stress_title = f"✨ {display_stress_title}"
                         
@@ -823,14 +779,12 @@ Required structure:
                             stress_task_raw.get("benefit", AI_PLACEHOLDER_TEXT),
                             stress_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT),
                             get_random_emoji("stress", local_data["Goal"]),
-                            is_ai_generated_valid=True # Explicitly mark as valid AI content
+                            is_ai_generated_valid=True
                         )}
                     </div>
                     """
                 else:
-                    # AI content failed validation, use personalized default for this task
                     stress_default_content = get_personalized_default_content("stress_task", local_data["Goal"], local_data, is_full_fallback=True)
-                    # The title from get_personalized_default_content already includes '[DEFAULT]'
                     stress_task_html = f"""
                     <div class='stress-task-container'>
                         <h4><strong>{stress_default_content['title']}</strong> {stress_default_content['emoji']}</h4>
@@ -840,15 +794,13 @@ Required structure:
                             stress_default_content['benefit'],
                             stress_default_content['pro_tips'],
                             stress_default_content['emoji'],
-                            is_ai_generated_valid=False # Explicitly mark as NOT valid AI content
+                            is_ai_generated_valid=False
                         )}
                     </div>
                     """
 
-                # --- Prepare Habit Task HTML ---
                 habit_task_html = ""
                 if is_habit_ai_valid:
-                    # Use AI's title, prepend '✨' if it's not a default title
                     display_habit_title = clean_and_translate_to_english(habit_task_raw.get('title', 'Habit Building Task'))
                     if not habit_task_raw.get('title', '').startswith("[DEFAULT]"):
                         display_habit_title = f"✨ {display_habit_title}"
@@ -862,14 +814,12 @@ Required structure:
                             habit_task_raw.get("benefit", AI_PLACEHOLDER_TEXT),
                             habit_task_raw.get("pro_tips", AI_PLACEHOLDER_TEXT),
                             get_random_emoji("habit", local_data["Goal"]),
-                            is_ai_generated_valid=True # Explicitly mark as valid AI content
+                            is_ai_generated_valid=True
                         )}
                     </div>
                     """
                 else:
-                    # AI content failed validation, use personalized default for this task
                     habit_default_content = get_personalized_default_content("habit_task", local_data["Goal"], local_data, is_full_fallback=True)
-                    # The title from get_personalized_default_content already includes '[DEFAULT]'
                     habit_task_html = f"""
                     <div class='habit-task-container'>
                         <h4><strong>{habit_default_content['title']}</strong> {habit_default_content['emoji']}</h4>
@@ -879,7 +829,7 @@ Required structure:
                             habit_default_content['benefit'],
                             habit_default_content['pro_tips'],
                             habit_default_content['emoji'],
-                            is_ai_generated_valid=False # Explicitly mark as NOT valid AI content
+                            is_ai_generated_valid=False
                         )}
                     </div>
                     """
@@ -889,18 +839,17 @@ Required structure:
             logging.info(f"Successfully generated and validated wellness plan for {days} days in {time.time() - start_time:.2f} seconds on attempt {attempt+1}.")
             return '\n\n'.join(formatted_plan_days), days
 
-        except (json.JSONDecodeError, ValueError, RuntimeError) as e:
+        except (json.JSONDecodeError, ValueError, RuntimeError, Exception) as e: # Catch broad exceptions for robustness
             logging.warning(f"Attempt {attempt+1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(1.5)
-                logging.info(f"Retrying generation. Next attempt with temperature up to {initial_temperature + (attempt + 1) * 0.15:.2f}")
+                time.sleep(1) # Reduced sleep for faster retries
+                logging.info(f"Retrying generation. Next attempt with temperature up to {initial_temperature + (attempt + 1) * temp_increment:.2f}")
             else:
                 logging.error("Max retries reached. Falling back to purely TIPS-based plan generation.")
-                st.session_state.all_fallback_content_generated = True # Set flag indicating full fallback
+                st.session_state.all_fallback_content_generated = True
                 
                 formatted_plan_days = []
                 for i in range(days):
-                    # Generate personalized default content for ALL tasks, explicitly marking as full fallback
                     stress_default = get_personalized_default_content("stress_task", local_data["Goal"], local_data, is_full_fallback=True)
                     habit_default = get_personalized_default_content("habit_task", local_data["Goal"], local_data, is_full_fallback=True)
 
@@ -918,6 +867,7 @@ Required structure:
                     """
                     formatted_plan_days.append(f"### Day {i+1}\n{stress_task_html}\n{habit_task_html}")
                 logging.info(f"Generated default plan for {days} days using personalized fallbacks.")
+                
                 st.session_state.progress = {}
                 st.session_state.habit_values = {}
                 for i in range(days):
@@ -925,12 +875,6 @@ Required structure:
                     st.session_state.progress[day_key] = {"Stress": False, "Habit": False}
                     st.session_state.habit_values[day_key] = 0.0
                 return '\n\n'.join(formatted_plan_days), days
-        except Exception as e:
-            logging.error(f"An unexpected error occurred on attempt {attempt+1}: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(1.5)
-            else:
-                raise RuntimeError(f"An unexpected error occurred after {max_retries} retries. Last error: {e}")
     
     raise RuntimeError("Wellness plan generation loop completed without returning a plan or raising an error.")
 
@@ -962,13 +906,13 @@ query = st.selectbox("💡 Choose an example or type your own:", example_queries
 
 if st.button("Submit Question 🗣️", key="submit_query_btn"):
     question = custom_query.strip() or (query if query != "Select an example query..." else "")
+
     if not question:
         st.error("🚨 Please enter a question or select an example query.")
     else:
         logging.info(f"Submitting Q&A query: {question}")
         local_data = st.session_state.holistic_user_data
         
-        # Define a response for when the AI truly cannot provide specific advice.
         qna_placeholder_fallback_message = f"Content currently unavailable. For more specific guidance, please ensure your wellness profile is filled out. In the meantime, general principles apply."
 
         prompt_parts = [
@@ -983,13 +927,13 @@ if st.button("Submit Question 🗣️", key="submit_query_btn"):
             prompt_parts.append(f'- Mindfulness Practice Frequency (per week): {local_data["Mindfulness_Frequency"]}')
             prompt_parts.append(f'- Sleep Hours: {local_data["Sleep_Hours"]:.1f}')
             prompt_parts.append(f'- Stress Level: {local_data["Stress_Level"]}')
-            prompt_parts.append(f'- Primary Goal: {local_data["Goal"]}\n') # Clarified as Primary Goal
+            prompt_parts.append(f'- Primary Goal: {local_data["Goal"]}\n')
         else:
             prompt_parts.append("The user has not provided a detailed wellness profile. Provide general, widely applicable advice.\n")
 
         prompt_parts.append(f'Question: "{question}"\n')
         prompt_parts.append("Include 2–3 relevant emojis to enhance engagement. Ensure the response is practical and grounded in health science.\n")
-        prompt_parts.append(f"**CRITICAL INSTRUCTION:** Your entire response MUST be in clear, grammatically correct English. Do NOT include any Chinese characters or mixed-language phrases. If the question is in mixed language, answer in English. If you cannot generate a good, personalized response, state \"{qna_placeholder_fallback_message}\"")
+        prompt_parts.append(f"**CRITICAL INSTRUCTION:** Your entire response MUST be in clear, grammatically correct ENGLISH. Do NOT include any Chinese characters or mixed-language phrases. If the question is in mixed language, answer in English. If you cannot generate a good, personalized response, state \"{qna_placeholder_fallback_message}\"")
         final_prompt = "\n".join(prompt_parts)
 
         try:
@@ -1001,7 +945,6 @@ if st.button("Submit Question 🗣️", key="submit_query_btn"):
             )
             raw_response_text = response.choices[0].message.content
             
-            # Check if the response is the fallback message or truly empty after cleaning
             cleaned_response = clean_and_translate_to_english(raw_response_text)
             if not cleaned_response or qna_placeholder_fallback_message in raw_response_text:
                 st.session_state.qa_response = f"<div class='result-box ai-response'>{qna_placeholder_fallback_message}</div>"
@@ -1014,7 +957,6 @@ if st.button("Submit Question 🗣️", key="submit_query_btn"):
             logging.error(f"Q&A API call failed: {e}")
             st.session_state.qa_response = f"<div class='result-box ai-response'>An error occurred while fetching the response. Please try again. 😥</div>"
             st.markdown(st.session_state.qa_response, unsafe_allow_html=True)
-
 
 # User Input Form
 st.subheader("📋 Wellness Profile")
@@ -1047,11 +989,11 @@ if submitted:
     logging.info(f"Form submitted with Plan_Duration: {plan_duration}")
     st.session_state.show_content = True
     st.session_state.success_message_trigger = True
-    st.session_state.wellness_plan = None  # Force clear old plan
-    st.session_state.raw_plan_json = None # Clear raw plan JSON
+    st.session_state.wellness_plan = None
+    st.session_state.raw_plan_json = None
     st.session_state.progress = {}
     st.session_state.habit_values = {}
-    st.session_state.generated_tasks_per_day = {} # Clear previous generated tasks
+    st.session_state.generated_tasks_per_day = {}
     st.rerun()
 
 if st.session_state.success_message_trigger:
@@ -1067,17 +1009,17 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                 plan, days = generate_wellness_plan(st.session_state.holistic_user_data)
                 st.session_state.wellness_plan = plan
                 logging.info(f"Wellness plan generated for {days} days.")
-                # Initialize progress trackers based on generated plan structure
+
                 day_blocks = plan.split('\n\n')
-                for day_block in day_blocks:
-                    day_match = re.search(r'### Day (\d+)', day_block)
-                    if day_match:
-                        day_num = int(day_match.group(1))
-                        day_key = f"Day {day_num}"
-                        if day_key not in st.session_state.progress:
-                            st.session_state.progress[day_key] = {"Stress": False, "Habit": False}
-                        if day_key not in st.session_state.habit_values:
-                            st.session_state.habit_values[day_key] = 0.0
+
+                if not st.session_state.progress or len(st.session_state.progress) != days:
+                    st.session_state.progress = {}
+                    st.session_state.habit_values = {}
+                    for i in range(days):
+                        day_key = f"Day {i+1}"
+                        st.session_state.progress[day_key] = {"Stress": False, "Habit": False}
+                        st.session_state.habit_values[day_key] = 0.0
+                
                 logging.info("Wellness plan generated and session state updated.")
             except Exception as e:
                 st.error(f"Failed to generate plan: {e}")
@@ -1121,26 +1063,23 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                     raw_stress_task_data = day_json_data.get("stress_task", {})
                     raw_habit_task_data = day_json_data.get("habit_task", {})
 
-                    # --- Check if AI content is valid and specific ---
-                    is_stress_ai_valid = False
-                    if (raw_stress_task_data.get("title", "").strip() and 1 <= len(raw_stress_task_data.get("title", "").split()) <= 15) and \
-                       (raw_stress_task_data.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("description", "")) >= 80) and \
-                       (raw_stress_task_data.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("benefit", "")) >= 80) and \
-                       (raw_stress_task_data.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("pro_tips", "")) >= 80):
-                        is_stress_ai_valid = True
+                    # Simplified AI validity check for faster rendering
+                    is_stress_ai_valid = (
+                        (raw_stress_task_data.get("title", "").strip() and 1 <= len(raw_stress_task_data.get("title", "").split()) <= 15) and
+                        (raw_stress_task_data.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("description", "")) >= 80) and
+                        (raw_stress_task_data.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("benefit", "")) >= 80) and
+                        (raw_stress_task_data.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_stress_task_data.get("pro_tips", "")) >= 80)
+                    )
                     
-                    is_habit_ai_valid = False
-                    if (raw_habit_task_data.get("title", "").strip() and 1 <= len(raw_habit_task_data.get("title", "").split()) <= 15) and \
-                       (raw_habit_task_data.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("description", "")) >= 80) and \
-                       (raw_habit_task_data.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("benefit", "")) >= 80) and \
-                       (raw_habit_task_data.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("pro_tips", "")) >= 80):
-                        is_habit_ai_valid = True
+                    is_habit_ai_valid = (
+                        (raw_habit_task_data.get("title", "").strip() and 1 <= len(raw_habit_task_data.get("title", "").split()) <= 15) and
+                        (raw_habit_task_data.get("description", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("description", "")) >= 80) and
+                        (raw_habit_task_data.get("benefit", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("benefit", "")) >= 80) and
+                        (raw_habit_task_data.get("pro_tips", AI_PLACEHOLDER_TEXT) != AI_PLACEHOLDER_TEXT and len(raw_habit_task_data.get("pro_tips", "")) >= 80)
+                    )
 
-                    # --- Prepare Stress Task HTML ---
                     if is_stress_ai_valid:
-                        # Use AI's title, prepend '✨' if it's not a default title
                         display_stress_title = clean_and_translate_to_english(raw_stress_task_data.get('title', 'Stress Management Task'))
-                        # Add ✨ prefix only if it's not a default title generated by fallback
                         if not raw_stress_task_data.get('title', '').startswith("[DEFAULT]"):
                             display_stress_title = f"✨ {display_stress_title}"
                             
@@ -1158,9 +1097,7 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                         </div>
                         """
                     else:
-                        # AI content failed validation, use personalized default for this task
                         stress_default_content = get_personalized_default_content("stress_task", st.session_state.holistic_user_data["Goal"], st.session_state.holistic_user_data, is_full_fallback=True)
-                        # The title from get_personalized_default_content already includes '[DEFAULT]'
                         stress_task_html_rendered = f"""
                         <div class='stress-task-container'>
                             <h4><strong>{stress_default_content['title']}</strong> {stress_default_content['emoji']}</h4>
@@ -1175,9 +1112,7 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                         </div>
                         """
 
-                    # --- Prepare Habit Task HTML ---
                     if is_habit_ai_valid:
-                        # Use AI's title, prepend '✨' if it's not a default title
                         display_habit_title = clean_and_translate_to_english(raw_habit_task_data.get('title', 'Habit Building Task'))
                         if not raw_habit_task_data.get('title', '').startswith("[DEFAULT]"):
                             display_habit_title = f"✨ {display_habit_title}"
@@ -1196,9 +1131,7 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                         </div>
                         """
                     else:
-                        # AI content failed validation, use personalized default for this task
                         habit_default_content = get_personalized_default_content("habit_task", st.session_state.holistic_user_data["Goal"], st.session_state.holistic_user_data, is_full_fallback=True)
-                        # The title from get_personalized_default_content already includes '[DEFAULT]'
                         habit_task_html_rendered = f"""
                         <div class='habit-task-container'>
                             <h4><strong>{habit_default_content['title']}</strong> {habit_default_content['emoji']}</h4>
@@ -1215,7 +1148,6 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
 
                 except Exception as rendering_error:
                     logging.error(f"Error during rendering/fallback for Day {day_num}: {rendering_error}. Falling back to full default content for this day")
-                    # If any part of the extraction or rendering fails, resort to full default generation for this day
                     stress_default = get_personalized_default_content("stress_task", st.session_state.holistic_user_data["Goal"], st.session_state.holistic_user_data, is_full_fallback=True)
                     stress_task_html_rendered = f"""
                     <div class='stress-task-container'>
@@ -1239,7 +1171,6 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
             st.markdown("<h3>📈 Track Your Progress <span class='emoji-pulse'>✅</span></h3>", unsafe_allow_html=True)
             sorted_days_for_progress = sorted(st.session_state.progress.keys(), key=lambda x: int(x.split()[1]) if ' ' in x else float('inf'))
             
-            # Calculate consecutive days completion
             consecutive_days = 0
             for day in sorted_days_for_progress:
                 day_progress = st.session_state.progress.get(day, {})
@@ -1250,7 +1181,6 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
             if consecutive_days >= 3:
                 st.markdown(f"<div class='result-box'>🎉 You've completed {consecutive_days} days in a row! Keep it up! 🚀</div>", unsafe_allow_html=True)
 
-            # Display individual day trackers
             for day in sorted_days_for_progress:
                 with st.container():
                     st.markdown(f"<div class='task-card'><strong>{day} 🗓️</strong></div>", unsafe_allow_html=True)
@@ -1270,18 +1200,13 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                         if day not in st.session_state.habit_values:
                             st.session_state.habit_values[day] = 0.0
 
-                        # Checkbox for Stress Task completion
                         st.session_state.progress[day]["Stress"] = st.checkbox("Stress Done ✅", key=stress_completed_key, value=st.session_state.progress[day].get("Stress", False))
-                        
-                        # Checkbox for Habit Task completion
                         st.session_state.progress[day]["Habit"] = st.checkbox("Habit Done ✅", key=habit_completed_key, value=st.session_state.progress[day].get("Habit", False))
 
-                        completion_habit_value_for_display = 0.0 # For percentage calculation
+                        completion_habit_value_for_display = 0.0
                         
-                        # Number input for specific habit goals
                         if st.session_state.holistic_user_data and st.session_state.holistic_user_data["Goal"] in ["Increase Water Intake", "Eat More Vegetables"]:
                             default_val = st.session_state.habit_values.get(day, 0.0)
-                            # Ensure key exists or initialize it
                             if value_ni_key not in st.session_state or st.session_state[value_ni_key] is None:
                                 st.session_state[value_ni_key] = default_val
                             
@@ -1299,16 +1224,15 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                             else: # Eat More Vegetables
                                 if current_value >= veg_target: completion_habit_value_for_display = 1.0
                                 elif current_value > 0: completion_habit_value_for_display = 0.5
-                        else: # For other goals, habit completion is binary (done or not done)
+                        else:
                             completion_habit_value_for_display = 1.0 if st.session_state.progress[day].get("Habit", False) else 0.0
                         
-                        # Calculate overall daily completion percentage
                         num_tasks_to_consider = 0
                         total_completion_points = 0.0
                         
                         if st.session_state.progress[day].get("Stress", False):
                             num_tasks_to_consider += 1
-                            total_completion_points += 1.0 # Stress task is 1 point if completed
+                            total_completion_points += 1.0
                         if st.session_state.progress[day].get("Habit", False):
                             num_tasks_to_consider += 1
                             total_completion_points += completion_habit_value_for_display
@@ -1409,10 +1333,8 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
             stress_map = {"Low": 1, "Moderate": 2, "High": 3}
 
             if local_data:
-                # Add user's data with small random jitter for visibility if points overlap
                 user_wl_val = workload_map.get(local_data["Workload_Intensity"], 2)
                 user_supp_val = support_map.get(local_data["Social_Support"], 2)
-                # Normalize Relaxation Time to 0-3 scale for Z-axis
                 user_relax_val = min(local_data["Relaxation_Time"] / 8.0 * 3, 3) if local_data["Relaxation_Time"] is not None else 0.0
                 user_stress_level_num = stress_map.get(local_data["Stress_Level"], 2)
 
@@ -1430,7 +1352,7 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                 scatter_data_list.append({
                     "Workload Intensity": random.uniform(0.7, 3.3),
                     "Social Support": random.uniform(0.7, 3.3),
-                    "Relaxation Time": random.uniform(-0.3, 3.3), # Allow some values below 0 to show range
+                    "Relaxation Time": random.uniform(-0.3, 3.3),
                     "Stress Level": sl_num,
                     "Point Type": "Sample"
                 })
@@ -1456,7 +1378,6 @@ if st.session_state.show_content and st.session_state.holistic_user_data:
                 category_orders={"Stress Level": [1, 2, 3]}
             )
 
-            # Differentiate user profile point
             if local_data:
                 fig.update_traces(marker=dict(size=10, symbol='diamond', color='white', line=dict(color='black', width=2), opacity=1.0), selector=dict(name="Your Profile"))
             fig.update_traces(marker=dict(size=4, opacity=0.7), selector=dict(name="Sample"))
