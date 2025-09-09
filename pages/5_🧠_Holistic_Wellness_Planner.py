@@ -1024,18 +1024,6 @@ if st.button("Submit Question 🗣️", key="submit_query_btn"):
             st.session_state.qa_response = f"<div class='result-box qa-response-content'>An error occurred while fetching the response. Please try again.</div>"
             st.markdown(st.session_state.qa_response, unsafe_allow_html=True)
 
-# Main content
-st.markdown(
-    """
-    <h1 style='text-align:center; font-size:2.8rem; margin-top:-1rem;'>
-        🧠 Holistic Wellness Planner
-    </h1>
-    <p style='text-align:center; font-size:1.1rem; color:#6c757d;'>
-        Create a personalized plan to manage stress and build healthy habits! 🧘‍♀️✨ <span class='emoji-pulse'>✨</span>
-    </p>
-    """,
-    unsafe_allow_html=True
-)
 
 # User Input Form
 st.subheader("📋 Wellness Profile")
