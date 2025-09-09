@@ -5,6 +5,11 @@ import plotly.express as px
 import pandas as pd
 from openai import OpenAI
 import logging
+import logging
+logging.basicConfig(level=logging.INFO)
+def initialize_client(api_key=None):
+    logging.info("Initializing client with API Key: %s", api_key[:5] + "..." if api_key else "None")
+    return OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 # Configure logging
 logging.basicConfig(
