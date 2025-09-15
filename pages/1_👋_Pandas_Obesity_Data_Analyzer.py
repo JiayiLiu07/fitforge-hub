@@ -5,16 +5,26 @@ import plotly.express as px
 import pandas as pd
 from openai import OpenAI
 import logging
+import sys
+import sqlite3
+
+# Ensure UTF-8 encoding to handle emojis
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("app.log"),
-        logging.StreamHandler()
+        logging.FileHandler("app.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Log session state and SQLite version for debugging
+logging.info(f"Session state keys: {list(st.session_state.keys())}")
+logging.info(f"SQLite version: {sqlite3.sqlite_version}")
 
 st.markdown("""
 <style>
@@ -28,7 +38,6 @@ st.markdown("""
         font-weight: 600;
         transition: background-color 0.2s;
     }
-    .stButton>button:hover { background-color: #2563eb; }
 </style> 
 """, unsafe_allow_html=True)
 
@@ -70,6 +79,7 @@ base_path = "data"
 attribute_path = os.path.join(base_path, "obesity_level_attribute_clean.csv")
 result_path = os.path.join(base_path, "obesity_level_result_clean.csv")
 
+# Check if data files exist
 if not os.path.exists(attribute_path) or not os.path.exists(result_path):
     st.error(f"🚨 Data files not found: {attribute_path} or {result_path}")
     logging.error(f"Data files not found: {attribute_path} or {result_path}")
@@ -104,45 +114,28 @@ You are a senior data analyst tasked with converting natural language questions 
 The database contains a single DataFrame `merged_df` created by merging two DataFrames on `id`:
 
 merged_df(
-    id INT,
-    Gender STRING,
-    Age DOUBLE,
-    Height DOUBLE,
-    Weight DOUBLE,
-    family_history_with_overweight INT,
-    FAVC INT,
-    FCVC DOUBLE,
-    NCP DOUBLE,
-    CAEC STRING,
-    SMOKE INT,
-    CH2O DOUBLE,
-    SCC INT,
-    FAF DOUBLE,
-    TUE DOUBLE,
-    CALC STRING,
-    MTRANS STRING,
-    obesity_level STRING,
-    level_num INT
+   id INT,
+   Gender STRING,
+   Age DOUBLE,
+   Height DOUBLE,
+   Weight DOUBLE,
+   family_history_with_overweight INT,
+   FAVC INT,
+   FCVC DOUBLE,
+   NCP DOUBLE,
+   CAEC STRING,
+   SMOKE INT,
+   CH2O DOUBLE,
+   SCC INT,
+   FAF DOUBLE,
+   TUE DOUBLE,
+   CALC STRING,
+   MTRANS STRING,
+   obesity_level STRING,
+   level_num INT
 )
 
 `level_num` is a numerical representation of the obesity level, higher values indicate more severe obesity levels.
-
-IMPORTANT:
-- Use `merged_df` as the table name in the SQL query.
-- Do **NOT** use `attr_df` or `result_df`.
-- Do **NOT** use `level_num` in ORDER BY or WHERE clauses unless specifically requested.
-- For power calculations (like Height^2 for BMI), ALWAYS use (Height * Height) or POW(Height, 2) instead of POWER or ^, because this is executed in SQLite which does not support POWER.
-- For Plotly visualizations, create a horizontal bar chart (use `orientation='h'`) with a modern and visually appealing style:
-  - Use `template="plotly_white"` for a clean background.
-  - Set `hovermode="x unified"` for unified hover labels.
-  - Use a vibrant color palette by setting `color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]` in the trace (e.g., `px.bar`).
-  - Set `font=dict(size=12, family="Arial")` for readable text.
-  - Use `margin=dict(l=50, r=50, t=80, b=50)` for balanced layout.
-  - Ensure the legend is horizontal and positioned above: `legend=dict(orientation="h", yanchor="top", y=1.1, xanchor="center", x=0.5)`.
-  - Add animation with `transition=dict(duration=500)` for smooth transitions.
-  - Ensure charts are responsive with `fig.update_layout(autosize=True)`.
-  - Do NOT set `color` in `update_layout`; use `color_discrete_sequence` in the trace creation instead.
-
 Write a SQL query to be executed on `merged_df` using `pandasql`, and provide Plotly visualization code using the resulting DataFrame `df`.
 
 Follow this format strictly:
@@ -155,34 +148,44 @@ FROM merged_df
 ```python
 # Plotly visualization code, df is the SQL result DataFrame
 import plotly.express as px
-fig = px.bar(df, orientation='h', color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"], ...)
-fig.update_layout(
-    template="plotly_white",
-    hovermode="x unified",
-    font=dict(size=12, family="Arial"),
-    margin=dict(l=50, r=50, t=80, b=50),
-    legend=dict(orientation="h", yanchor="top", y=1.1, xanchor="center", x=0.5),
-    autosize=True,
-    transition=dict(duration=500)
-)
+fig = px.XXX(df, ...)
 ```
 
-Question: {question}
-""".strip()
+User's question: {question}
 
-# ---------- 3. LLM Call ----------
+CRITICAL INSTRUCTIONS:
+- Use `merged_df` as the table name in the SQL query.
+- Do NOT use `attr_df` or `result_df`.
+- Do NOT use `level_num` in ORDER BY or WHERE clauses.
+- Use the following mapping for `obesity_level`: {level_map}
+- For power operations (e.g., Height squared for BMI), you MUST use `Height * Height` in the SQL query. Under NO circumstances use POWER(Height, 2), POW(Height, 2), or Height ** 2, as these are NOT supported by SQLite in pandasql and will cause execution errors. `Height * Height` is the ONLY valid method for squaring Height.
+- For BMI calculations (Weight / Height^2), ALWAYS use `Weight / (Height * Height)` in the SQL query. Example: SELECT Gender, (Weight / (Height * Height)) AS BMI FROM merged_df;
+- Verify that your SQL query avoids any functions not supported by SQLite, such as POW or POWER.
+"""
+
+# ---------- 3. Convert natural language to SQL and Plotly code ----------
 def nl_to_sql_and_plot(question: str):
-    prompt = PROMPT_TEMPLATE.format(question=question, level_map=level_map)
+    full_prompt = f"""
+    Summary: {st.session_state.summary}
+    """
+    for q, a in st.session_state.history[-3:]:
+        full_prompt += f"\nHistorical question: {q}\nHistorical answer: {a}"
+    full_prompt += f"\nCurrent question: {PROMPT_TEMPLATE.format(question=question, level_map=level_map)}"
+
+    logging.info("=========== Prompt ===========")
+    logging.info(f"Sending prompt to LLM:\n{full_prompt}")
+
+    messages = [{"role": "user", "content": full_prompt}]
     try:
         resp = client.chat.completions.create(
             model="qwen-plus",
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=0
         )
-        text = resp.choices[0].message.content.strip()
+        text = resp.choices[0].message.content
     except Exception as e:
-        logging.error(f"LLM call failed: {e}")
-        raise ValueError(f"LLM call failed: {e}")
+        logging.error(f"LLM API call failed: {e}")
+        raise
 
     logging.info(f"LLM response:\n{text}")
 
@@ -197,40 +200,66 @@ def nl_to_sql_and_plot(question: str):
 
 # ---------- 4. Execute query and generate plot ----------
 def run_and_plot(question: str):
-    try:
-        sql, plot_code, answer = nl_to_sql_and_plot(question)
-    except Exception as e:
-        st.error(f"🚨 API Key validation or LLM call failed: {e}")
-        return None, None, None
-    
-    logging.info("=========== Code ===========")
-    logging.info(f"Generated SQL query:\n{sql}")
-    logging.info(f"Generated Plotly code:\n{plot_code}")
-
-    try:
-        from pandasql import sqldf
-        # Merge DataFrames for SQL query
+    logging.info(f"Processing query: {question}")
+    # Force Pandas for BMI queries to avoid SQLite issues
+    if 'BMI' in question.upper():
+        logging.info("Using Pandas for BMI calculation (skipping SQL)")
         merged_df = pd.merge(attr_df, result_df, on='id')
-        logging.info(f"merged_df shape: {merged_df.shape}")
-        logging.info(f"merged_df sample:\n{merged_df.head().to_string()}")
-        # Ensure SQL query uses merged_df
-        sql = sql.replace("attr_df", "merged_df").replace("result_df", "merged_df")
-        # Replace POWER with POW for SQLite compatibility
-        sql = sql.replace("POWER", "POW").replace("power", "pow")
-        df = sqldf(sql, {"merged_df": merged_df})
-    except Exception as e:
-        st.error(f"🚨 SQL execution failed: {e}")
-        return None, None, None
+        df = merged_df[['Gender', 'Height', 'Weight']].copy()
+        df['BMI'] = df['Weight'] / (df['Height'] * df['Height'])  # Use Pandas multiplication
+        sql = "SELECT Gender, (Weight / (Height * Height)) AS BMI FROM merged_df"
+        plot_code = """
+import plotly.express as px
+fig = px.histogram(df, x='BMI', color='Gender', nbins=50, title='BMI Distribution by Gender')
+fig.update_layout(bargap=0.02)
+"""
+        answer = f"Pandas-based BMI calculation used to avoid SQLite issues.\n```sql\n{sql}\n```\n```python\n{plot_code}\n```"
+    else:
+        try:
+            sql, plot_code, answer = nl_to_sql_and_plot(question)
+        except Exception as e:
+            st.error(f"🚨 API Key validation or LLM call failed: {e}")
+            logging.error(f"LLM call failed: {e}")
+            return None, None, None
+        
+        logging.info("=========== Code ===========")
+        logging.info(f"Generated SQL query:\n{sql}")
+        logging.info(f"Generated Plotly code:\n{plot_code}")
+
+        # Post-process SQL to replace incorrect power operations
+        original_sql = sql
+        sql = re.sub(r'(?i)\bPOW\s*\(\s*Height\s*,\s*2\s*\)', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'(?i)\bPOWER\s*\(\s*Height\s*,\s*2\s*\)', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'Height\s*\*\*\s*2', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'\(\s*Weight\s*/\s*POW\s*\(\s*Height\s*,\s*2\s*\)\s*\)', '(Weight / (Height * Height))', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'\(\s*Weight\s*/\s*POWER\s*\(\s*Height\s*,\s*2\s*\)\s*\)', '(Weight / (Height * Height))', sql, flags=re.DOTALL | re.IGNORECASE)
+        if original_sql != sql:
+            logging.info(f"SQL modified: Replaced power operations. Original:\n{original_sql}\nModified:\n{sql}")
+        else:
+            logging.info("No power operation replacements needed in SQL query")
+        logging.info(f"Post-processed SQL query:\n{sql}")
+
+        try:
+            from pandasql import sqldf
+            # Merge DataFrames for SQL query
+            merged_df = pd.merge(attr_df, result_df, on='id')
+            logging.info(f"merged_df shape: {merged_df.shape}")
+            logging.info(f"merged_df sample:\n{merged_df.head().to_string()}")
+            # Ensure SQL query uses merged_df
+            sql = sql.replace("attr_df", "merged_df").replace("result_df", "merged_df")
+            df = sqldf(sql, {"merged_df": merged_df})
+        except Exception as e:
+            logging.error(f"SQL execution failed: {e}")
+            st.error(f"🚨 SQL execution failed: {e}")
+            return None, None, None
 
     loc = {"df": df, "px": px, "fig": None}
     try:
         exec(plot_code, loc)
-        # Remove invalid 'color' from layout if present
-        if 'color' in loc["fig"].layout:
-            del loc["fig"].layout['color']
     except Exception as e:
         st.error(f"🚨 Plotly execution failed: {e}")
-        loc["fig"] = px.bar(df, orientation='h', template="plotly_white", hovermode="x unified", color_discrete_sequence=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"])  # Fallback to styled horizontal bar chart
+        logging.error(f"Plotly execution failed: {e}")
+        loc["fig"] = px.bar(df)  # Fallback to default bar chart
 
     # Update summary
     summary_prompt = f"""
@@ -248,6 +277,7 @@ def run_and_plot(question: str):
         st.session_state.summary = summary_resp.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"🚨 Summary generation failed: {e}")
+        logging.error(f"Summary generation failed: {e}")
 
     # Save to history
     st.session_state.history.append((question, answer))
@@ -284,7 +314,7 @@ question = st.text_input(
 )
 example_queries = [
     "Select an example query...",
-    "Create a histogram of BMI (Weight/Height^2) by gender",
+    "Create a stacked bar chart showing obesity levels across different genders",
     "Show a scatter plot of age vs weight colored by obesity level",
     "Display a pie chart of obesity level distribution",
     "Create a histogram of BMI (Weight/Height^2) by gender",
@@ -305,7 +335,7 @@ if st.button("Run Query 🚀"):
                 st.subheader("Data Preview")
                 st.dataframe(df)
                 st.subheader("Visualization")
-                st.plotly_chart(fig, use_container_width=True, config={"responsive": True})
+                st.plotly_chart(fig, use_container_width=True)
                 st.success("Query executed successfully! 🎉")
             else:
                 st.error("Failed to process the query. Please try again. 😔")
