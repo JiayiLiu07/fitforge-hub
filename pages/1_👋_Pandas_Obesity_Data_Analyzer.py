@@ -149,6 +149,7 @@ FROM merged_df
 # Plotly visualization code, df is the SQL result DataFrame
 import plotly.express as px
 fig = px.XXX(df, ...)
+fig.update_layout(...)
 ```
 
 User's question: {question}
@@ -161,6 +162,7 @@ CRITICAL INSTRUCTIONS:
 - For power operations (e.g., Height squared for BMI), you MUST use `Height * Height` in the SQL query. Under NO circumstances use POWER(Height, 2), POW(Height, 2), or Height ** 2, as these are NOT supported by SQLite in pandasql and will cause execution errors. `Height * Height` is the ONLY valid method for squaring Height.
 - For BMI calculations (Weight / Height^2), ALWAYS use `Weight / (Height * Height)` in the SQL query. Example: SELECT Gender, (Weight / (Height * Height)) AS BMI FROM merged_df;
 - Verify that your SQL query avoids any functions not supported by SQLite, such as POW or POWER.
+- For Plotly visualization, ensure `fig.update_layout()` is used for layout settings like `hovermode`, `title`, or `bargap`. Do NOT pass `hovermode` or other layout parameters directly to `px.bar`, `px.histogram`, or other plotting functions.
 """
 
 # ---------- 3. Convert natural language to SQL and Plotly code ----------
@@ -211,7 +213,7 @@ def run_and_plot(question: str):
         plot_code = """
 import plotly.express as px
 fig = px.histogram(df, x='BMI', color='Gender', nbins=50, title='BMI Distribution by Gender')
-fig.update_layout(bargap=0.02)
+fig.update_layout(bargap=0.02, hovermode='x unified')
 """
         answer = f"Pandas-based BMI calculation used to avoid SQLite issues.\n```sql\n{sql}\n```\n```python\n{plot_code}\n```"
     else:
@@ -238,6 +240,24 @@ fig.update_layout(bargap=0.02)
         else:
             logging.info("No power operation replacements needed in SQL query")
         logging.info(f"Post-processed SQL query:\n{sql}")
+
+        # Post-process Plotly code to fix hovermode and other layout issues
+        original_plot_code = plot_code
+        plot_code = re.sub(
+            r'(px\.(bar|histogram|scatter|line|pie|box)\s*\([^)]*?)(,\s*hovermode\s*=\s*[\'"].*?[\'"])',
+            r'\1', plot_code, flags=re.DOTALL | re.IGNORECASE
+        )
+        plot_code = re.sub(
+            r'(go\.(Bar|Histogram|Scatter|Line|Pie|Box)\s*\([^)]*?)(,\s*hovermode\s*=\s*[\'"].*?[\'"])',
+            r'\1', plot_code, flags=re.DOTALL | re.IGNORECASE
+        )
+        if 'fig.update_layout(' not in plot_code and 'px.bar' in plot_code:
+            plot_code += "\nfig.update_layout(hovermode='x unified')"
+        if original_plot_code != plot_code:
+            logging.info(f"Plotly code modified: Fixed hovermode. Original:\n{original_plot_code}\nModified:\n{plot_code}")
+        else:
+            logging.info("No hovermode fixes needed in Plotly code")
+        logging.info(f"Post-processed Plotly code:\n{plot_code}")
 
         try:
             from pandasql import sqldf
