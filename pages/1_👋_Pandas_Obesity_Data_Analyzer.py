@@ -5,16 +5,26 @@ import plotly.express as px
 import pandas as pd
 from openai import OpenAI
 import logging
+import sys
+import sqlite3
+
+# Ensure UTF-8 encoding to handle emojis
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("app.log"),
-        logging.StreamHandler()
+        logging.FileHandler("app.log", encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
+
+# Log session state and SQLite version for debugging
+logging.info(f"Session state keys: {list(st.session_state.keys())}")
+logging.info(f"SQLite version: {sqlite3.sqlite_version}")
 
 st.markdown("""
 <style>
@@ -143,12 +153,14 @@ fig = px.XXX(df, ...)
 
 User's question: {question}
 
-IMPORTANT:
+CRITICAL INSTRUCTIONS:
 - Use `merged_df` as the table name in the SQL query.
-- Do **NOT** use `attr_df` or `result_df`.
-- Do **NOT** use `level_num` in ORDER BY or WHERE clauses.
+- Do NOT use `attr_df` or `result_df`.
+- Do NOT use `level_num` in ORDER BY or WHERE clauses.
 - Use the following mapping for `obesity_level`: {level_map}
-- For power operations (e.g., Height squared for BMI), use POW(Height, 2) instead of POWER(Height, 2), as this is SQLite-compatible.
+- For power operations (e.g., Height squared for BMI), you MUST use `Height * Height` in the SQL query. Under NO circumstances use POWER(Height, 2), POW(Height, 2), or Height ** 2, as these are NOT supported by SQLite in pandasql and will cause execution errors. `Height * Height` is the ONLY valid method for squaring Height.
+- For BMI calculations (Weight / Height^2), ALWAYS use `Weight / (Height * Height)` in the SQL query. Example: SELECT Gender, (Weight / (Height * Height)) AS BMI FROM merged_df;
+- Verify that your SQL query avoids any functions not supported by SQLite, such as POW or POWER.
 """
 
 # ---------- 3. Convert natural language to SQL and Plotly code ----------
@@ -188,34 +200,65 @@ def nl_to_sql_and_plot(question: str):
 
 # ---------- 4. Execute query and generate plot ----------
 def run_and_plot(question: str):
-    try:
-        sql, plot_code, answer = nl_to_sql_and_plot(question)
-    except Exception as e:
-        st.error(f"🚨 API Key validation or LLM call failed: {e}")
-        return None, None, None
-    
-    logging.info("=========== Code ===========")
-    logging.info(f"Generated SQL query:\n{sql}")
-    logging.info(f"Generated Plotly code:\n{plot_code}")
-
-    try:
-        from pandasql import sqldf
-        # Merge DataFrames for SQL query
+    logging.info(f"Processing query: {question}")
+    # Force Pandas for BMI queries to avoid SQLite issues
+    if 'BMI' in question.upper():
+        logging.info("Using Pandas for BMI calculation (skipping SQL)")
         merged_df = pd.merge(attr_df, result_df, on='id')
-        logging.info(f"merged_df shape: {merged_df.shape}")
-        logging.info(f"merged_df sample:\n{merged_df.head().to_string()}")
-        # Ensure SQL query uses merged_df
-        sql = sql.replace("attr_df", "merged_df").replace("result_df", "merged_df")
-        df = sqldf(sql, {"merged_df": merged_df})
-    except Exception as e:
-        st.error(f"🚨 SQL execution failed: {e}")
-        return None, None, None
+        df = merged_df[['Gender', 'Height', 'Weight']].copy()
+        df['BMI'] = df['Weight'] / (df['Height'] * df['Height'])  # Use Pandas multiplication
+        sql = "SELECT Gender, (Weight / (Height * Height)) AS BMI FROM merged_df"
+        plot_code = """
+import plotly.express as px
+fig = px.histogram(df, x='BMI', color='Gender', nbins=50, title='BMI Distribution by Gender')
+fig.update_layout(bargap=0.02)
+"""
+        answer = f"Pandas-based BMI calculation used to avoid SQLite issues.\n```sql\n{sql}\n```\n```python\n{plot_code}\n```"
+    else:
+        try:
+            sql, plot_code, answer = nl_to_sql_and_plot(question)
+        except Exception as e:
+            st.error(f"🚨 API Key validation or LLM call failed: {e}")
+            logging.error(f"LLM call failed: {e}")
+            return None, None, None
+        
+        logging.info("=========== Code ===========")
+        logging.info(f"Generated SQL query:\n{sql}")
+        logging.info(f"Generated Plotly code:\n{plot_code}")
+
+        # Post-process SQL to replace incorrect power operations
+        original_sql = sql
+        sql = re.sub(r'(?i)\bPOW\s*\(\s*Height\s*,\s*2\s*\)', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'(?i)\bPOWER\s*\(\s*Height\s*,\s*2\s*\)', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'Height\s*\*\*\s*2', '(Height * Height)', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'\(\s*Weight\s*/\s*POW\s*\(\s*Height\s*,\s*2\s*\)\s*\)', '(Weight / (Height * Height))', sql, flags=re.DOTALL | re.IGNORECASE)
+        sql = re.sub(r'\(\s*Weight\s*/\s*POWER\s*\(\s*Height\s*,\s*2\s*\)\s*\)', '(Weight / (Height * Height))', sql, flags=re.DOTALL | re.IGNORECASE)
+        if original_sql != sql:
+            logging.info(f"SQL modified: Replaced power operations. Original:\n{original_sql}\nModified:\n{sql}")
+        else:
+            logging.info("No power operation replacements needed in SQL query")
+        logging.info(f"Post-processed SQL query:\n{sql}")
+
+        try:
+            from pandasql import sqldf
+            # Merge DataFrames for SQL query
+            merged_df = pd.merge(attr_df, result_df, on='id')
+            logging.info(f"merged_df shape: {merged_df.shape}")
+            logging.info(f"merged_df sample:\n{merged_df.head().to_string()}")
+            # Ensure SQL query uses merged_df
+            sql = sql.replace("attr_df", "merged_df").replace("result_df", "merged_df")
+            df = sqldf(sql, {"merged_df": merged_df})
+        except Exception as e:
+            logging.error(f"SQL execution failed: {e}")
+            st.error(f"🚨 SQL execution failed: {e}")
+            return None, None, None
 
     loc = {"df": df, "px": px, "fig": None}
     try:
         exec(plot_code, loc)
     except Exception as e:
         st.error(f"🚨 Plotly execution failed: {e}")
+        logging.error(f"Plotly execution failed: {e}")
         loc["fig"] = px.bar(df)  # Fallback to default bar chart
 
     # Update summary
@@ -234,6 +277,7 @@ def run_and_plot(question: str):
         st.session_state.summary = summary_resp.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"🚨 Summary generation failed: {e}")
+        logging.error(f"Summary generation failed: {e}")
 
     # Save to history
     st.session_state.history.append((question, answer))
