@@ -7,6 +7,8 @@ from openai import OpenAI
 import logging
 import sys
 import sqlite3
+import time
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 # Ensure UTF-8 encoding to handle emojis
 sys.stdout.reconfigure(encoding='utf-8')
@@ -22,9 +24,11 @@ logging.basicConfig(
     ]
 )
 
-# Log session state and SQLite version for debugging
-logging.info(f"Session state keys: {list(st.session_state.keys())}")
+# Log environment and module info for debugging
+logging.info(f"Python version: {sys.version}")
+logging.info(f"Pandas version: {pd.__version__ if 'pd' in globals() else 'Not loaded'}")
 logging.info(f"SQLite version: {sqlite3.sqlite_version}")
+logging.info(f"Session state keys: {list(st.session_state.keys())}")
 
 st.markdown("""
 <style>
@@ -74,10 +78,23 @@ except Exception as e:
     logging.error(f"OpenAI client initialization failed: {e}")
     st.stop()
 
-# ---------- 1. Load data ----------
+# ---------- 1. Load data with retry mechanism ----------
 base_path = "data"
 attribute_path = os.path.join(base_path, "obesity_level_attribute_clean.csv")
 result_path = os.path.join(base_path, "obesity_level_result_clean.csv")
+
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type((FileNotFoundError, pd.errors.ParserError)))
+def load_data():
+    try:
+        logging.info(f"Attempting to load data from {attribute_path} and {result_path}")
+        attr_df = pd.read_csv(attribute_path)
+        result_df = pd.read_csv(result_path)
+        logging.info(f"attr_df shape: {attr_df.shape}")
+        logging.info(f"result_df shape: {result_df.shape}")
+        return attr_df, result_df
+    except Exception as e:
+        logging.error(f"Data loading failed: {e}")
+        raise
 
 # Check if data files exist
 if not os.path.exists(attribute_path) or not os.path.exists(result_path):
@@ -86,13 +103,10 @@ if not os.path.exists(attribute_path) or not os.path.exists(result_path):
     st.stop()
 
 try:
-    attr_df = pd.read_csv(attribute_path)
-    result_df = pd.read_csv(result_path)
-    logging.info(f"attr_df shape: {attr_df.shape}")
-    logging.info(f"result_df shape: {result_df.shape}")
+    attr_df, result_df = load_data()
 except Exception as e:
-    st.error(f"🚨 Failed to load data files: {e}")
-    logging.error(f"Data loading failed: {e}")
+    st.error(f"🚨 Failed to load data files after retries: {e}")
+    logging.error(f"Data loading failed after retries: {e}")
     st.stop()
 
 # Process result
@@ -106,7 +120,12 @@ level_map = {
     'Insufficient_Weight': 0
 }
 
-result_df['level_num'] = result_df['obesity_level'].map(level_map)
+try:
+    result_df['level_num'] = result_df['obesity_level'].map(level_map)
+except Exception as e:
+    st.error(f"🚨 Failed to map obesity levels: {e}")
+    logging.error(f"Obesity level mapping failed: {e}")
+    st.stop()
 
 # ---------- 2. Build Prompt ----------
 PROMPT_TEMPLATE = """
